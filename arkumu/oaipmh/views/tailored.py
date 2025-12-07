@@ -304,7 +304,15 @@ def _list_records_tailored(
     4. Build metadata for each record
     """
     import time
+    t_start = time.perf_counter()
+
+    # Check if this is first DB hit (connection establishment)
+    from django.db import connection
     t0 = time.perf_counter()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1")
+    t_db_init = time.perf_counter()
+    logger.debug("ListRecords timing: DB connection check %.3fs", t_db_init - t0)
 
     queryset = _approved_publications_queryset(
         set_spec=set_spec,
@@ -312,11 +320,11 @@ def _list_records_tailored(
         until_date=until_date,
     )
     t1 = time.perf_counter()
-    logger.info("ListRecords timing: queryset build %.3fs", t1 - t0)
+    logger.debug("ListRecords timing: queryset build %.3fs", t1 - t_db_init)
 
     cursor_marker = _publication_dataset_marker(queryset)
     t2 = time.perf_counter()
-    logger.info("ListRecords timing: dataset marker %.3fs", t2 - t1)
+    logger.debug("ListRecords timing: dataset marker %.3fs (first ORM query)", t2 - t1)
 
     if cursor_marker_from_token and cursor_marker_from_token != cursor_marker:
         return _error(oai, "badResumptionToken", "Dataset has changed; restart harvesting")
@@ -328,7 +336,7 @@ def _list_records_tailored(
         page_size=page_size,
     )
     t3 = time.perf_counter()
-    logger.info("ListRecords timing: page fetch %.3fs", t3 - t2)
+    logger.debug("ListRecords timing: page fetch %.3fs", t3 - t2)
 
     if offset == 0 and not page.publications:
         return _error(oai, "noRecordsMatch", "No records found matching the criteria")
@@ -336,7 +344,7 @@ def _list_records_tailored(
     # Batch fetch project hints only for this page of approved publications
     project_hints = _fetch_project_hints_for_publications(page.publications)
     t4 = time.perf_counter()
-    logger.info("ListRecords timing: project hints %.3fs", t4 - t3)
+    logger.debug("ListRecords timing: project hints %.3fs", t4 - t3)
 
     list_records = ET.SubElement(oai, "ListRecords")
     records_added = 0

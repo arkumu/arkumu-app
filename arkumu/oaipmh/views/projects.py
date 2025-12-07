@@ -188,9 +188,6 @@ def _build_tailored_project_hint_from_resource(
                 codes.append(normalized_code)
                 record = dataclass_replace(record, institution_codes=codes)
 
-    # Clear digital_objects - they come from OAIProjectMediaLink instead
-    record = dataclass_replace(record, digital_objects=[])
-
     try:
         result = _tailored_project_builder.from_project_record(
             record,
@@ -202,7 +199,7 @@ def _build_tailored_project_hint_from_resource(
             prefetched_graph_data=prefetched_graph_data,
         )
         t2 = time.time()
-        logger.info(
+        logger.debug(
             "OAI build %s: record=%.3fs (%s), builder=%.3fs, total=%.3fs",
             resource.uri[-20:],
             t1 - t0,

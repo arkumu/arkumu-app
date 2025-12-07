@@ -29,8 +29,11 @@ from .oai_project import (
     _infer_file_name,
     HARVESTABLE_STORAGE_STATUSES,
     parse_fixity,
+    _DCP_FOLDER_CACHE,
+    _load_dcp_folder_cache,
 )
 from arkumu.oaipmh.models import OAIProjectMediaLink
+from arkumu.oaipmh.services import dcp_index
 
 
 def batch_fetch_curated_links(project_ids: Sequence[UUID]) -> Dict[UUID, List]:
@@ -63,34 +66,6 @@ class BatchedDcpData:
     file_lists: Dict[str, Tuple[str, ...]]  # folder_name -> (relative_file_paths,)
 
 
-# In-memory cache for DCP folder mappings (digital_object_uri -> folder_name)
-_DCP_FOLDER_CACHE: Dict[str, str] = {}
-_DCP_FOLDER_CACHE_LOADED = False
-
-
-def _load_dcp_folder_cache() -> None:
-    """Load all KHM DCP folder mappings into memory (one-time)."""
-    global _DCP_FOLDER_CACHE, _DCP_FOLDER_CACHE_LOADED
-    if _DCP_FOLDER_CACHE_LOADED:
-        return
-
-    DCP_PREDICATE = "http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner"
-    triples = Triple.objects.filter(
-        predicate__uri=DCP_PREDICATE,
-    ).select_related("subject", "object")
-
-    for t in triples:
-        uri = getattr(t.subject, "uri", None)
-        value = getattr(t.object, "value", None)
-        if uri and value:
-            path = str(value).strip().replace("\\", "/")
-            folder_name = path.rstrip("/").split("/")[-1] if "/" in path else path
-            _DCP_FOLDER_CACHE[uri] = folder_name
-
-    _DCP_FOLDER_CACHE_LOADED = True
-    logger.info("DCP folder cache loaded: %d mappings", len(_DCP_FOLDER_CACHE))
-
-
 def batch_fetch_dcp_folders(curated_links_by_project: Dict[UUID, List]) -> BatchedDcpData:
     """
     Batch fetch DCP file lists using in-memory cache (no per-request Triple query).
@@ -99,8 +74,6 @@ def batch_fetch_dcp_folders(curated_links_by_project: Dict[UUID, List]) -> Batch
     - folder_paths: dict mapping digital_object_uri -> folder_name
     - file_lists: dict mapping folder_name -> tuple of relative file paths
     """
-    from arkumu.oaipmh.services import dcp_index
-
     if not curated_links_by_project:
         return BatchedDcpData(folder_paths={}, file_lists={})
 
@@ -148,9 +121,6 @@ def batch_fetch_graph_data(
 
     This replaces 4 queries per resource with 4 total queries.
     """
-    from arkumu.projects.services.snapshot_service import ProjectSnapshotService
-    from arkumu.catalog.services.project_views import ProjectURIs
-
     result = BatchedGraphData(
         resources={},
         path_literals={},
