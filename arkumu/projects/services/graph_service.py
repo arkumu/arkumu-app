@@ -382,22 +382,30 @@ def _fetch_graphs_for_batch(
                         filtered_count
                     )
 
-        # Filter out junction ENTITIES that don't link to neighbor events
-        # A junction is only relevant if it connects a neighbor (actor) to a neighbor event
-        # This prevents junctions from pulling in hundreds of shared events
+        # Filter junction ENTITIES to prevent explosion from shared actors
+        # Strategy: Keep junctions only if their RESOURCE links (actor, event) point to neighbors
+        # Ignore literal values (role names, flags, type URIs) when filtering
 
-        # Find which junction entities link to NEIGHBOR events
         from arkumu.metadata.canonical import canonical_uri
         EVENT_CANONICAL = canonical_uri("event")
+        ACTOR_CANONICAL = canonical_uri("actor")
+        ACTOR_IN_EVENT_CANONICAL = canonical_uri("actor_in_event")
+
+        junction_resource_links: Dict[uuid.UUID, Set[uuid.UUID]] = defaultdict(set)
+        for t in junction_entity_triples:
+            if t.object_id and t.object:
+                # Only consider resource links (not literal values)
+                # Resource links use canonical predicates like event, actor, actor_in_event
+                pred_canonical = t.predicate.canonical_uri if t.predicate else None
+                if pred_canonical in (EVENT_CANONICAL, ACTOR_CANONICAL, ACTOR_IN_EVENT_CANONICAL):
+                    junction_resource_links[t.subject_id].add(t.object_id)
 
         junctions_to_keep = set()
-        for t in junction_entity_triples:
-            # Check predicate canonical URI (Triple model uses predicate.canonical_uri)
-            pred_canonical = t.predicate.canonical_uri if t.predicate else None
-            if pred_canonical == EVENT_CANONICAL and t.object_id:
-                # This junction links to an event - check if it's a neighbor event
-                if t.object_id in all_neighbor_ids:
-                    junctions_to_keep.add(t.subject_id)
+        for junction_id, resource_links in junction_resource_links.items():
+            # Keep this junction if ALL its resource links point to neighbors
+            allowed_ids = all_neighbor_ids | all_project_ids
+            if resource_links and resource_links.issubset(allowed_ids):
+                junctions_to_keep.add(junction_id)
 
         # Debug logging for first batch
         if junctions_to_keep and len(all_project_ids) ==  1:
