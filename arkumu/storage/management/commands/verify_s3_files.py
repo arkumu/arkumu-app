@@ -4,7 +4,6 @@ import hashlib
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-from django.db.models import Q
 
 from arkumu.storage.models import S3FileObject
 from arkumu.storage.services.base_storage_service import BaseStorageService
@@ -67,9 +66,8 @@ class Command(BaseCommand):
         queryset = S3FileObject.objects.all()
 
         if bucket:
-            queryset = queryset.filter(
-                Q(organization__iexact=bucket) | Q(session__s3_bucket__iexact=bucket)
-            )
+            # Only filter by organization field, not session.s3_bucket
+            queryset = queryset.filter(organization__iexact=bucket)
 
         if prefix:
             queryset = queryset.filter(s3_key__startswith=prefix)
@@ -100,18 +98,16 @@ class Command(BaseCommand):
         try:
             iterator = queryset.iterator()
             for obj in iterator:
-                bucket_name = (
-                    obj.organization
-                    or getattr(obj.session, "organization", None)
-                    or bucket
-                )
+                # Only use obj.organization or explicit --bucket flag
+                # Do NOT fallback to session.organization (unreliable)
+                bucket_name = obj.organization or bucket
 
                 # Skip files without determinable bucket
                 if not bucket_name:
                     skipped += 1
                     self.stdout.write(
                         self.style.WARNING(
-                            f"Skipping S3FileObject {obj.pk}: no bucket/organization set"
+                            f"Skipping S3FileObject {obj.pk}: no organization set"
                         )
                     )
                     continue
