@@ -94,6 +94,7 @@ class Command(BaseCommand):
         service = BaseStorageService()
         missing = 0
         updated_checksums = 0
+        skipped = 0
         failures: list[str] = []
 
         try:
@@ -103,8 +104,18 @@ class Command(BaseCommand):
                     obj.organization
                     or getattr(obj.session, "organization", None)
                     or bucket
-                    or "fuk"
                 )
+
+                # Skip files without determinable bucket
+                if not bucket_name:
+                    skipped += 1
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"Skipping S3FileObject {obj.pk}: no bucket/organization set"
+                        )
+                    )
+                    continue
+
                 key = obj.s3_key or ""
 
                 result = verify_single_object(
@@ -166,6 +177,13 @@ class Command(BaseCommand):
                     service.close()  # type: ignore[attr-defined]
                 except Exception:  # noqa: BLE001
                     pass
+
+        if skipped > 0:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Skipped {skipped} file(s) without determinable bucket/organization."
+                )
+            )
 
         if missing == 0:
             self.stdout.write(self.style.SUCCESS("All verified S3 objects exist."))
