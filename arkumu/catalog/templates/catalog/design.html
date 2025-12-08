@@ -10,14 +10,14 @@
       grid-template-columns: 1fr !important;
     }
   }
-  
+
   /* Entre 1280px y 1999px: 2 columnas */
   @media (min-width: 1000px) and (max-width: 1300px) {
     .schools-grid {
       grid-template-columns: repeat(2, 1fr) !important;
     }
   }
-  
+
   /* 2000px o más: 3 columnas */
   @media (min-width: 1300px) {
     .schools-grid {
@@ -80,20 +80,20 @@
         <div class="schools-grid grid gap-y-10 gap-x-24 mt-8">
           <!-- Column 1 -->
           <div>
-            {% include 'components/labels/tag.html' with label_text="Folkwang Universität der Künste" %}
-            {% include 'components/labels/tag.html' with label_text="Universität zu Köln" %}
+            {% include 'components/labels/tag.html' with link="/catalog/browse/?orga_code=Folkwang Universität der Künste" label_text="Folkwang Universität der Künste" %}
+            {% include 'components/labels/tag.html' with link="https://www.uni-koeln.de/" label_text="Universität zu Köln" %}
           </div>
 
           <!-- Column 2 -->
           <div>
-            {% include 'components/labels/tag.html' with label_text="Hochschule für Musik Detmold" %}
-            {% include 'components/labels/tag.html' with label_text="Kunsthochschule für Medien Köln " %}
+            {% include 'components/labels/tag.html' with link="/catalog/browse/?orga_code=Hochschule für Musik Detmold" label_text="Hochschule für Musik Detmold" %}
+            {% include 'components/labels/tag.html' with link="/catalog/browse/?orga_code=Kunsthochschule für Medien Köln" label_text="Kunsthochschule für Medien Köln" %}
           </div>
 
           <!-- Column 3 -->
           <div>
-            {% include 'components/labels/tag.html' with label_text="Robert Schumann Hochschule Düsseldorf" %}
-            {% include 'components/labels/tag.html' with label_text="Hochschule für Musik und Tanz Köln" %}
+            {% include 'components/labels/tag.html' with link="/catalog/browse/?orga_code=Robert Schumann Hochschule Düsseldorf" label_text="Robert Schumann Hochschule Düsseldorf" %}
+            {% include 'components/labels/tag.html' with link="/catalog/browse/?orga_code=Hochschule für Musik und Tanz Köln" label_text="Hochschule für Musik und Tanz Köln" %}
           </div>
         </div>
       </div>
