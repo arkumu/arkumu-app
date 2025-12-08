@@ -7,7 +7,7 @@
       <div class="space-y-10">
         {% for event in events %}
           <article class="space-y-6">
-            {% include 'components/events/event_item.html' with beginn_ende=event.display_date ereignistyp=event.type ereignistitel=event.name|default:event.uri|default:"Ereignis" akteur1=event.primary_actor akteur2=event.secondary_actor button_text="Ereignis ansehen" %}
+            {% include 'components/events/event_item.html' with beginn_ende=event.display_date ereignistyp=event.type ereignistitel=event.name|default:event.id|default:"Ereignis" akteur1=event.primary_actor akteur2=event.secondary_actor button_text="Ereignis ansehen" %}
           </article>
         {% endfor %}
       </div>
