@@ -56,6 +56,8 @@ class Predicates:
     INSTITUTION_NAME = "http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule"
     CATEGORY_NAME = "http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb"
     SCHLAGWORT_LABEL = "http://arkumu.org/data/properties/deutsches-wikidata-label"
+    # Schlagwort label (canonical, used by KHM keywords)
+    SCHLAGWORT_NAME = "http://arkumu.org/data/properties/deutscher-name-des-schlagworts"
 
 
 @dataclass

@@ -147,17 +147,47 @@ def extract_alternative_titles(index: TripleIndex, project_uri: str) -> List[Pro
     return [ProjectAlternateTitle(value=t) for t in alt_titles if t]
 
 
-def extract_catchphrases(index: TripleIndex, project_uri: str) -> List[ProjectCatchphrase]:
-    """Extract catchphrases/schlagworte from graph."""
-    schlagwort_uris = get_all_object_uris(index, project_uri, Predicates.SCHLAGWORT)
-    catchphrases = []
+def extract_catchphrases(index: TripleIndex, project_uri: str, org_code: Optional[str] = None) -> List[ProjectCatchphrase]:
+    """Extract catchphrases/schlagworte from graph based on organization.
 
-    for sw_uri in schlagwort_uris:
-        label = get_literal(index, sw_uri, Predicates.SCHLAGWORT_LABEL)
-        if not label:
-            label = get_literal(index, sw_uri, Predicates.ACTOR_NAME)
-        if label:
-            catchphrases.append(ProjectCatchphrase(label=label, uri=sw_uri))
+    Each org stores keywords differently:
+    - FUK/RSH/DET/HMT: Project -> schlagwort -> entity -> deutsches-wikidata-label
+    - KHM: Junction (kreuz-projekte-keywords) -> proj-id-fk -> Project
+           Junction -> keyword-id-fk -> Keyword entity -> keyword-deu
+    """
+    org = (org_code or "").lower()
+
+    catchphrases = []
+    seen_labels = set()
+
+    if org == "khm":
+        # KHM uses junction tables with canonical predicates
+        for subject in index.all_subjects:
+            if "kreuz-projekte-keywords" not in subject.lower():
+                continue
+            # Check if junction links to our project via projekt predicate
+            proj_link = get_object_uri(index, subject, Predicates.PROJEKT)
+            if proj_link != project_uri:
+                continue
+            # Get the keyword entity via schlagwort predicate
+            kw_uri = get_object_uri(index, subject, Predicates.SCHLAGWORT)
+            if not kw_uri:
+                continue
+            # Get the label from the keyword entity (uses canonical predicate)
+            label = get_literal(index, kw_uri, Predicates.SCHLAGWORT_NAME)
+            if label and label not in seen_labels:
+                seen_labels.add(label)
+                catchphrases.append(ProjectCatchphrase(label=label, uri=kw_uri))
+    else:
+        # FUK/RSH/DET/HMT use schlagwort predicate -> entity with label
+        schlagwort_uris = get_all_object_uris(index, project_uri, Predicates.SCHLAGWORT)
+        for sw_uri in schlagwort_uris:
+            label = get_literal(index, sw_uri, Predicates.SCHLAGWORT_LABEL)
+            if not label:
+                label = get_literal(index, sw_uri, Predicates.ACTOR_NAME)
+            if label and label not in seen_labels:
+                seen_labels.add(label)
+                catchphrases.append(ProjectCatchphrase(label=label, uri=sw_uri))
 
     return catchphrases
 
@@ -531,7 +561,7 @@ def build_project_record(graphs: ProjectGraphs, subject_id: str) -> ProjectRecor
     categories = extract_categories(index, project_uri)
     project_type = extract_project_type(index, project_uri)
     alternative_titles = extract_alternative_titles(index, project_uri)
-    catchphrases = extract_catchphrases(index, project_uri)
+    catchphrases = extract_catchphrases(index, project_uri, org_code=org_code)
 
     # Extract digital objects (needs event URIs)
     event_uris = [e.uri for e in events if e.uri]
