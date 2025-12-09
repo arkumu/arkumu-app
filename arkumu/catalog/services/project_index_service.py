@@ -33,34 +33,31 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Module-level cache for all cards (persists until app restart)
-_ALL_CARDS_CACHE: List[Dict[str, Any]] = []
-_CACHE_LOADED: bool = False
+# Redis cache key for all cards (shared across workers, persists until invalidated)
+_CARDS_CACHE_KEY = "arkumu:catalog:all_cards"
+_CARDS_CACHE_TTL = None  # No expiry - invalidate manually after rebuild
 
 
 def warm_cards_cache() -> int:
-    """Load all cards into memory at startup. Returns count of cached cards."""
-    global _ALL_CARDS_CACHE, _CACHE_LOADED
+    """Load all cards into Redis cache at startup. Returns count of cached cards."""
     try:
         base_qs = ProjectIndex.objects.filter(
             public_access_level=PublicAccessLevel.PUBLIC,
             is_public_approved=True,
         ).exclude(title__isnull=True).exclude(title='')
-        _ALL_CARDS_CACHE = [entry.to_card_dict() for entry in base_qs.order_by("title")]
-        _CACHE_LOADED = True
-        logger.info("warm_cards_cache: loaded %d cards into memory", len(_ALL_CARDS_CACHE))
-        return len(_ALL_CARDS_CACHE)
+        cards = [entry.to_card_dict() for entry in base_qs.order_by("title")]
+        cache.set(_CARDS_CACHE_KEY, cards, _CARDS_CACHE_TTL)
+        logger.info("warm_cards_cache: loaded %d cards into Redis", len(cards))
+        return len(cards)
     except Exception:
         logger.exception("warm_cards_cache: failed to load cards")
         return 0
 
 
 def invalidate_cards_cache() -> None:
-    """Clear the in-memory cards cache (call after index rebuild)."""
-    global _ALL_CARDS_CACHE, _CACHE_LOADED
-    _ALL_CARDS_CACHE = []
-    _CACHE_LOADED = False
-    logger.info("invalidate_cards_cache: cache cleared")
+    """Clear the Redis cards cache (call after index rebuild)."""
+    cache.delete(_CARDS_CACHE_KEY)
+    logger.info("invalidate_cards_cache: Redis cache cleared")
 
 
 class ProjectIndexService:
@@ -610,11 +607,13 @@ class ProjectIndexService:
             return cards
 
         if self.backend == "db":
-            # Use in-memory cache when no filters applied
+            # Use Redis cache when no filters applied
             has_filters = query or organ_code or categories or actors or catchphrases or year_from or year_to
-            if not has_filters and _CACHE_LOADED and not force_refresh:
-                logger.debug("ProjectIndexService[db]: returning %d cards from memory cache", len(_ALL_CARDS_CACHE))
-                return _ALL_CARDS_CACHE
+            if not has_filters and not force_refresh:
+                cached = cache.get(_CARDS_CACHE_KEY)
+                if cached:
+                    logger.debug("ProjectIndexService[db]: returning %d cards from Redis cache", len(cached))
+                    return cached
 
             base_qs = ProjectIndex.objects.filter(
                 public_access_level=PublicAccessLevel.PUBLIC,
