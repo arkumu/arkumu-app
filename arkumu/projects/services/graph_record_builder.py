@@ -54,6 +54,57 @@ def extract_institution(index: TripleIndex, project_uri: str) -> Optional[Projec
     )
 
 
+def extract_description(
+    index: TripleIndex,
+    project_uri: str,
+    org_code: Optional[str] = None,
+    events: Optional[List[ProjectEvent]] = None,
+) -> Optional[str]:
+    """Extract description from graph based on organization.
+
+    Each org stores descriptions differently:
+    - FUK/RSH/DET: Project -> beschreibung -> entity -> beschreibung literal
+    - KHM: Project -> ereignisbeschreibung -> literal directly
+    - HMT: No project description, use first event's deutsche-beschreibung
+    """
+    org = (org_code or "").lower()
+
+    # HMT: description is on events, not projects
+    if org == "hmt":
+        if events:
+            for event in events:
+                if event.description:
+                    return event.description
+        return None
+
+    # KHM: ereignisbeschreibung directly on project
+    if org == "khm":
+        desc = get_literal(index, project_uri, Predicates.EVENT_DESCRIPTION)
+        if desc and not desc.startswith("http"):
+            return desc
+        return None
+
+    # FUK/RSH/DET (canonicals): beschreibung links to entity with literal
+    # First check if beschreibung is a direct literal
+    desc = get_literal(index, project_uri, Predicates.DESCRIPTION)
+    if desc and not desc.startswith("http"):
+        return desc
+
+    # Follow link to beschreibung entity
+    desc_uri = get_object_uri(index, project_uri, Predicates.DESCRIPTION)
+    if desc_uri:
+        # Get literal from the linked entity
+        desc = get_literal(index, desc_uri, Predicates.DESCRIPTION)
+        if desc:
+            return desc
+        # Also try deutsche-beschreibung on the linked entity
+        desc = get_literal(index, desc_uri, Predicates.DESCRIPTION_DE)
+        if desc:
+            return desc
+
+    return None
+
+
 def extract_categories(index: TripleIndex, project_uri: str) -> List[ProjectCategory]:
     """Extract categories from graph."""
     cat_uris = get_all_object_uris(index, project_uri, Predicates.CATEGORY)
@@ -259,11 +310,16 @@ def extract_events(index: TripleIndex, project_uri: str) -> List[ProjectEvent]:
     for event_uri in event_uris:
         event_id = event_uri.rstrip("/").split("/")[-1] if event_uri else None
 
+        # Get event description - try ereignisbeschreibung first, then deutsche-beschreibung (HMT)
+        event_desc = get_literal(index, event_uri, Predicates.EVENT_DESCRIPTION)
+        if not event_desc:
+            event_desc = get_literal(index, event_uri, Predicates.DESCRIPTION_DE)
+
         event = ProjectEvent(
             id=event_id,
             uri=event_uri,
             name=get_literal(index, event_uri, Predicates.EVENT_NAME),
-            description=get_literal(index, event_uri, Predicates.EVENT_DESCRIPTION),
+            description=event_desc,
             location=get_literal(index, event_uri, Predicates.EVENT_LOCATION),
             type=get_literal(index, event_uri, Predicates.EVENT_TYPE),
             start=get_literal(index, event_uri, Predicates.EVENT_START),
@@ -426,21 +482,24 @@ def build_project_record(graphs: ProjectGraphs, subject_id: str) -> ProjectRecor
     index = TripleIndex.from_triples(graphs.triples)
     project_uri = graphs.project_uri
 
+    # Extract institution first (needed for org-specific logic)
+    institution = extract_institution(index, project_uri)
+    org_code = institution.code if institution else extract_code_from_uri(project_uri)
+
+    # Extract events (needed for HMT description extraction)
+    events = extract_events(index, project_uri)
+
     # Extract core properties
     title = get_literal(index, project_uri, Predicates.TITLE)
     subtitle = get_literal(index, project_uri, Predicates.SUBTITLE)
-    description = get_literal(index, project_uri, Predicates.DESCRIPTION)
-    if not description:
-        description = get_literal(index, project_uri, Predicates.DESCRIPTION_DE)
+    description = extract_description(index, project_uri, org_code=org_code, events=events)
     image = get_literal(index, project_uri, Predicates.IMAGE)
 
-    # Extract related entities
-    institution = extract_institution(index, project_uri)
+    # Extract remaining related entities
     categories = extract_categories(index, project_uri)
     project_type = extract_project_type(index, project_uri)
     alternative_titles = extract_alternative_titles(index, project_uri)
     catchphrases = extract_catchphrases(index, project_uri)
-    events = extract_events(index, project_uri)
 
     # Extract digital objects (needs event URIs)
     event_uris = [e.uri for e in events if e.uri]
