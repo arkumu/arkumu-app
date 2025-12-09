@@ -44,7 +44,7 @@
           <td class="py-3">
             <div class="flex flex-wrap gap-2">
               {% for keyword in metadata.schlagworte %}
-                <a href="/catalog/advanced-search/?query={{ keyword.name|urlencode }}"
+                <a href="/catalog/advanced-search/?schlagwort={{ keyword.name|urlencode }}"
                    class="underline text-arkumu-dark hover:opacity-70 transition-opacity
                           theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">
                   {{ keyword.name }}

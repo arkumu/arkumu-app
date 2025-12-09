@@ -144,7 +144,7 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             base_qs = ProjectIndex.objects.filter(
                 public_access_level=PublicAccessLevel.PUBLIC,
                 is_public_approved=True,
-            )
+            ).exclude(title__isnull=True).exclude(title='')
 
             # Get unique institution labels
             all_institutions = sorted(set(
