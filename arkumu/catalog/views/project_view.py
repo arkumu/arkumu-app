@@ -94,6 +94,88 @@ class ProjectView(LoginRequiredMixin, View):
 
     snapshot_service_class = ProjectSnapshotService
     detail_service_class = ProjectDetailIndexService
+
+    # Canonical URI mappings for metadata sections
+    # Format: (field_key, display_label, canonical_uri)
+    ALLGEMEIN_CANONICAL: Sequence[Tuple[str, str, str]] = (
+        ("kommentar_de", "Kommentar DE", "http://arkumu.org/data/properties/deutscher-kommentar"),
+        ("kommentar_en", "Kommentar EN", "http://arkumu.org/data/properties/englischer-kommentar"),
+        ("sprache_titel", "Sprache Titel", "http://arkumu.org/data/properties/sprache-des-bevorzugten-titels"),
+        ("sprache_untertitel", "Sprache Untertitel", "http://arkumu.org/data/properties/sprache-des-bevorzugten-untertitels"),
+    )
+
+    EIGENSCHAFTEN_CANONICAL: Sequence[Tuple[str, str, str]] = (
+        ("dauer_hms", "Dauer (HH:MM:SS)", "http://arkumu.org/data/properties/dauer-hms"),
+        ("dauer_freitext", "Dauer (Freitext)", "http://arkumu.org/data/properties/dauer-freitext"),
+        ("tonarten", "Tonarten", "http://arkumu.org/data/properties/tonart"),
+        ("produktionsformat", "Produktionsformat", "http://arkumu.org/data/properties/produktionsformat"),
+        ("instrumentierung", "Instrumentierung", "http://arkumu.org/data/properties/instrumentierung"),
+        ("aspect_ratio", "Bildseitenverhältnis", "http://arkumu.org/data/properties/aspect-ratio-bildseitenverhaeltnis"),
+        ("stimmung_hz", "Stimmung (Hz)", "http://arkumu.org/data/properties/stimmung-hz"),
+        ("sprachen", "Sprachen", "http://arkumu.org/data/properties/originalsprache"),
+        ("abspielgeschwindigkeit", "Abspielgeschwindigkeit", "http://arkumu.org/data/properties/abspielgeschwindigkeit"),
+        ("equalizer", "Equalizer", "http://arkumu.org/data/properties/equalizer"),
+        ("bandbreite", "Bandbreite", "http://arkumu.org/data/properties/bandbreite"),
+        ("tonaufnahme", "Tonaufnahme", "http://arkumu.org/data/properties/tonaufnahme"),
+        ("werkverzeichnis", "Werkverzeichnis", "http://arkumu.org/data/properties/werkverzeichnis"),
+        ("musikgattungen", "Musikgattungen", "http://arkumu.org/data/properties/musikgattung"),
+        ("tonformate", "Tonformate", "http://arkumu.org/data/properties/tonformat"),
+        ("bildfrequenz", "Bildfrequenz", "http://arkumu.org/data/properties/bildfrequenz"),
+        ("filmentwicklung", "Filmentwicklung", "http://arkumu.org/data/properties/filmentwicklung"),
+        ("tonmischfassungen", "Tonmischfassungen", "http://arkumu.org/data/properties/tonmischfassung"),
+        ("fernsehnorm", "Fernsehnorm", "http://arkumu.org/data/properties/fernsehnorm"),
+        ("spurausrichtung", "Spurausrichtung", "http://arkumu.org/data/properties/spurausrichtung"),
+        ("ton_kanaele", "Tonkanäle", "http://arkumu.org/data/properties/ton-kanaele"),
+        ("audio_aufnahmetechnik", "Audio-Aufnahmetechnik", "http://arkumu.org/data/properties/audio-aufnahmetechnik"),
+    )
+
+    STATUS_CANONICAL: Sequence[Tuple[str, str, str]] = (
+        ("signatur", "Signatur", "http://arkumu.org/data/properties/signatur"),
+        ("signatur_beim_einlieferer", "Signatur beim Einlieferer", "http://arkumu.org/data/properties/signatur-beim-einlieferer"),
+        ("werkverzeichnis_nummer", "Werkverzeichnisnummer", "http://arkumu.org/data/properties/werkverzeichnis-nummer"),
+    )
+
+    NORMDATEN_CANONICAL: Sequence[Tuple[str, str, str]] = (
+        ("wikidata_ids", "Wikidata ID", "http://arkumu.org/data/properties/wikidata-id"),
+        ("gnd_ids", "GND ID", "http://arkumu.org/data/properties/gnd-nummer"),
+        ("viaf_ids", "VIAF ID", "http://arkumu.org/data/properties/viaf-id"),
+        ("aat_ids", "AAT ID", "http://arkumu.org/data/properties/aat-id"),
+        ("weitere_normdaten", "Weitere Normdaten", "http://arkumu.org/data/properties/andere-normdaten"),
+        ("externe_webseiten", "Externe Projekt Webseiten", "http://arkumu.org/data/properties/externe-projektwebseite"),
+    )
+
+    ERSTELLER_CANONICAL: Sequence[Tuple[str, str, str]] = (
+        ("hochschule", "Hochschule", "http://arkumu.org/data/properties/einliefernde-hochschule"),
+        ("organisationseinheit", "Organisationseinheit", "http://arkumu.org/data/properties/organisationseinheit"),
+        ("erstellungsdatum", "Erstellungsdatum beim Einlieferer", "http://arkumu.org/data/properties/projekterstellung-beim-einlieferer"),
+        ("letzte_modifikation", "Letzte Projektmodifikation beim Einlieferer", "http://arkumu.org/data/properties/letzte-projektmodifikation-beim-einlieferer"),
+    )
+
+    KATEGORISIERUNG_CANONICAL: Sequence[Tuple[str, str, str]] = (
+        ("projektkategorien", "Projektkategorien", "http://arkumu.org/data/properties/projektkategorie"),
+        ("schlagworte", "Schlagworte", "http://arkumu.org/data/properties/schlagwort"),
+    )
+
+    RECHTE_CANONICAL: Sequence[Tuple[str, str, str]] = (
+        ("rechtsstatus", "Rechtsstatus", "http://arkumu.org/data/properties/rechtsstatus"),
+        ("art_lizenzvertrag", "Art des Lizenzvertrages", "http://arkumu.org/data/properties/art-des-lizenzvertrages"),
+        ("bestehender_lizenzvertrag", "Bestehender Lizenzvertrag", "http://arkumu.org/data/properties/bestehender-lizenzvertrag"),
+        ("neuer_lizenzvertrag", "Neuer Lizenzvertrag (Digi-Kunst-Formular)", "http://arkumu.org/data/properties/neuer-lizenzvertrag-digi-kunst-formular"),
+        ("angegebene_nutzungsrechte", "Angegebene Nutzungsrechte", "http://arkumu.org/data/properties/angegebene-nutzungsrechte"),
+        ("sonderregelung", "Sonderregelung", "http://arkumu.org/data/properties/sonderregelung"),
+        ("weitere_rechtsdokumente", "Weitere Rechtsdokumente", "http://arkumu.org/data/properties/weiteres-rechtsdokument"),
+        ("dateiabfrage_dokument", "Dateiabfrage-Dokument", "http://arkumu.org/data/properties/dateiabfragedokument"),
+    )
+
+    RELATION_CANONICAL: Sequence[Tuple[str, str, str]] = (
+        ("ist_teil_von", "Ist Teil von", "http://arkumu.org/data/properties/projekt-ist-teil-von"),
+        ("hat_teil", "Hat Teil", "http://arkumu.org/data/properties/projekt-hat-teil"),
+        ("basiert_auf", "Basiert auf", "http://arkumu.org/data/properties/projekt-basiert-auf"),
+        ("hat_bezug_zu", "Hat Bezug zu", "http://arkumu.org/data/properties/projekt-hat-bezug-zu"),
+        ("ist_vorbereitend_fuer", "Ist vorbereitend für", "http://arkumu.org/data/properties/projekt-ist-vorbereitend-fuer"),
+    )
+
+    # Legacy field mappings for backward compatibility with dataclass properties
     PROPERTY_METADATA_FIELDS: Sequence[Tuple[str, str]] = (
         ("dauer_hms", "Dauer (HH:MM:SS)"),
         ("dauer_freitext", "Dauer (Freitext)"),
@@ -270,103 +352,382 @@ class ProjectView(LoginRequiredMixin, View):
             return {'key': label, 'label': label, 'value_list': value_list} if value_list else {'key': label, 'label': label, 'value': '—'}
         return {'key': label, 'label': label, 'value': value or '—'}
 
+    @staticmethod
+    def _build_metadata_from_detail_index(entry: ProjectDetailIndex) -> Dict[str, Any]:
+        """Build grouped metadata dict from ProjectDetailIndex."""
+        from arkumu.catalog.services.wikidata_service import WikidataService
+
+        wikidata_service = WikidataService()
+
+        # Resolve Wikidata IDs to labels for catchphrases
+        catchphrase_labels_raw = [c.get('label', '') for c in (entry.catchphrases or []) if c.get('label')]
+        schlagworte = []
+        for label in catchphrase_labels_raw:
+            name = wikidata_service.get_entity_label(wikidata_id=label)
+            if name:
+                schlagworte.append({'id': label, 'name': name})
+
+        # Categories with breadcrumbs
+        kategorien = []
+        for cat in (entry.categories or []):
+            label = cat.get('label', '')
+            if label:
+                name = wikidata_service.get_entity_label(wikidata_id=label) or label
+                kategorien.append({'id': label, 'name': name, 'breadcrumbs': [name]})
+
+        # Rights status
+        rights_label = entry.rights_status.get('label', '') if entry.rights_status else ''
+
+        # Build grouped structure
+        metadata = {
+            'allgemein': ProjectView._filter_empty([
+                ProjectView._metadata_entry('Kommentar DE', entry.properties.get('comment_de') if entry.properties else ''),
+                ProjectView._metadata_entry('Kommentar EN', entry.properties.get('comment_en') if entry.properties else ''),
+                ProjectView._metadata_entry('Sprache Titel', entry.properties.get('sprache_titel') if entry.properties else ''),
+                ProjectView._metadata_entry('Sprache Untertitel', entry.properties.get('sprache_untertitel') if entry.properties else ''),
+            ]),
+            'eigenschaften': ProjectView._filter_empty(
+                ProjectView._dict_metadata_entries_simple(
+                    entry.properties,
+                    ProjectView.PROPERTY_METADATA_FIELDS,
+                )
+            ),
+            'status': ProjectView._filter_empty(
+                ProjectView._dict_metadata_entries_simple(
+                    entry.status,
+                    ProjectView.STATUS_METADATA_FIELDS,
+                )
+            ),
+            'normdaten': ProjectView._filter_empty(
+                ProjectView._dict_metadata_entries_simple(
+                    entry.authority,
+                    ProjectView.AUTHORITY_METADATA_FIELDS,
+                )
+            ),
+            'ersteller': ProjectView._filter_empty(
+                ProjectView._dict_metadata_entries_simple(
+                    entry.submitter,
+                    ProjectView.SUBMITTER_METADATA_FIELDS,
+                )
+            ),
+            'kategorien': kategorien,
+            'schlagworte': schlagworte,
+            'rechte': ProjectView._filter_empty([
+                ProjectView._metadata_entry('Rechtsstatus', rights_label),
+            ] + ProjectView._dict_metadata_entries_simple(
+                entry.licenses,
+                ProjectView.LICENSE_METADATA_FIELDS,
+            )),
+            'related_projects': [],  # Placeholder for future implementation
+        }
+
+        return metadata
+
     @classmethod
-    def _dict_metadata_entries(
+    def _dict_metadata_entries_simple(
         cls,
         source: Optional[Dict[str, Any]],
         field_map: Sequence[Tuple[str, str]],
-        *,
-        prefix: str,
     ) -> List[Dict[str, Any]]:
-        """Create metadata entries from a dict source with prefixed labels."""
+        """Create metadata entries from a dict source without prefix."""
         if not source:
             return []
 
         entries: List[Dict[str, Any]] = []
         for field_name, label in field_map:
             value = source.get(field_name)
-            entry = cls._metadata_entry(f"{prefix} · {label}", value)
-            # Skip empty entries
-            if entry.get('value') == '—' and 'value_list' not in entry:
-                continue
+            entry = cls._metadata_entry(label, value)
             entries.append(entry)
         return entries
 
     @staticmethod
-    def _build_metadata_from_detail_index(entry: ProjectDetailIndex) -> List[Dict[str, Any]]:
-        """Build metadata list from ProjectDetailIndex - matching dev branch pattern."""
+    def _filter_empty(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filter out entries with empty values."""
+        return [e for e in entries if e.get('value') != '—' or 'value_list' in e]
+
+    @classmethod
+    def _build_metadata_from_graph(cls, projekt_uri: str, org_code: str) -> Dict[str, Any]:
+        """Build grouped metadata dict directly from graph using canonical URIs.
+
+        Uses graph_service to traverse the project graph and extract values
+        by canonical predicate URI - fully schema-driven approach.
+        """
+        from arkumu.projects.services.graph_service import get_project_graphs
+        from arkumu.metadata.models import Resource
         from arkumu.catalog.services.wikidata_service import WikidataService
 
-        metadata: List[Dict[str, Any]] = []
-
-        # 1. Basic fields
-        metadata.append(ProjectView._metadata_entry('Projekt URI', entry.uri))
-        metadata.append(ProjectView._metadata_entry('Institution', entry.institution_label))
-        metadata.append(ProjectView._metadata_entry('Projektart', entry.project_type_label))
-
-        # 2. List fields - extract from JSON
-        # Resolve Wikidata IDs to labels for catchphrases
         wikidata_service = WikidataService()
-        catchphrase_labels_raw = [c.get('label', '') for c in (entry.catchphrases or []) if c.get('label')]
-        catchphrase_labels = [wikidata_service.get_entity_label(wikidata_id=label) for label in catchphrase_labels_raw]
-        catchphrase_labels = [label for label in catchphrase_labels if label]  # Filter empty
 
-        category_labels = [c.get('label', '') for c in (entry.categories or []) if c.get('label')]
-        digital_object_paths = [d.get('path', '') for d in (entry.digital_objects or []) if d.get('path')]
-        alternative_titles = [t.get('value', '') for t in (entry.alternative_titles or []) if t.get('value')]
+        # Get project resource ID
+        try:
+            project_resource = Resource.objects.get(uri=projekt_uri)
+            project_id = str(project_resource.id)
+        except Resource.DoesNotExist:
+            logger.warning("_build_metadata_from_graph: project not found: %s", projekt_uri)
+            return cls._empty_metadata()
 
-        metadata.append(ProjectView._metadata_entry('Schlagworte', catchphrase_labels))
-        metadata.append(ProjectView._metadata_entry('Kategorien', category_labels))
-        metadata.append(ProjectView._metadata_entry('Digitale Objekte', digital_object_paths))
-        metadata.append(ProjectView._metadata_entry('Alternative Titel', alternative_titles))
+        # Get project graph with canonical URIs
+        graphs = get_project_graphs(project_id, org_code)
+        if not graphs:
+            logger.warning("_build_metadata_from_graph: no graph for project: %s", projekt_uri)
+            return cls._empty_metadata()
 
-        # 3. Rights status
-        rights_label = entry.rights_status.get('label', '') if entry.rights_status else ''
-        metadata.append(ProjectView._metadata_entry('Rechtsstatus', rights_label))
+        # Build lookup: canonical_uri -> list of values
+        canonical_values: Dict[str, List[str]] = {}
+        # Build lookup: subject_uri -> predicate_uri -> value (for label resolution)
+        # Uses both canonical_uri and predicate_uri as keys
+        entity_properties: Dict[str, Dict[str, str]] = {}
 
-        # 4. Event count
-        if entry.events:
-            metadata.append(ProjectView._metadata_entry('Anzahl Ereignisse', len(entry.events)))
+        for triple in graphs.triples:
+            canonical_uri = triple.predicate_canonical_uri
+            predicate_uri = triple.predicate_uri
+            value = triple.object_value or triple.object_uri
 
-        # 5. Bundled fields with prefixes
-        metadata.extend(
-            ProjectView._dict_metadata_entries(
-                entry.properties,
-                ProjectView.PROPERTY_METADATA_FIELDS,
-                prefix="Eigenschaften",
-            )
-        )
-        metadata.extend(
-            ProjectView._dict_metadata_entries(
-                entry.status,
-                ProjectView.STATUS_METADATA_FIELDS,
-                prefix="Status",
-            )
-        )
-        metadata.extend(
-            ProjectView._dict_metadata_entries(
-                entry.authority,
-                ProjectView.AUTHORITY_METADATA_FIELDS,
-                prefix="Normdaten",
-            )
-        )
-        metadata.extend(
-            ProjectView._dict_metadata_entries(
-                entry.submitter,
-                ProjectView.SUBMITTER_METADATA_FIELDS,
-                prefix="Einreichung",
-            )
-        )
-        metadata.extend(
-            ProjectView._dict_metadata_entries(
-                entry.licenses,
-                ProjectView.LICENSE_METADATA_FIELDS,
-                prefix="Lizenzen",
-            )
-        )
+            if canonical_uri and value:
+                canonical_values.setdefault(canonical_uri, []).append(value)
+            # Also index by predicate_uri (for properties without canonical mapping)
+            if predicate_uri and value:
+                canonical_values.setdefault(predicate_uri, []).append(value)
 
-        # Filter out empty entries (value == '—' and no value_list)
-        return [m for m in metadata if m.get('value') != '—' or 'value_list' in m]
+            # Build entity property lookup for label resolution (both canonical and institutional URIs)
+            if triple.subject_uri and value:
+                if canonical_uri:
+                    entity_properties.setdefault(triple.subject_uri, {})[canonical_uri] = value
+                if predicate_uri:
+                    entity_properties.setdefault(triple.subject_uri, {})[predicate_uri] = value
+
+        # Label predicates in priority order
+        LABEL_PREDICATES = [
+            'http://arkumu.org/data/properties/deutscher-name',
+            'http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule',
+            'http://arkumu.org/data/properties/deutscher-name-der-sprache',
+            'http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb',
+            'http://arkumu.org/data/properties/deutscher-name-der-projektart',
+            'http://arkumu.org/data/properties/deutscher-anzeigetext',
+            'http://arkumu.org/data/properties/bevorzugter-titel',
+        ]
+
+        def resolve_uri_to_label(uri: str) -> str:
+            """Resolve a URI to its label/name using graph data."""
+            if not uri or not uri.startswith('http'):
+                return uri
+            # Check if it's a Wikidata ID pattern
+            if uri.startswith('Q') or '/Q' in uri:
+                wikidata_id = uri.split('/')[-1] if '/' in uri else uri
+                label = wikidata_service.get_entity_label(wikidata_id=wikidata_id)
+                if label:
+                    return label
+            # Try to resolve from graph data first (no DB query)
+            if uri in entity_properties:
+                props = entity_properties[uri]
+                for label_pred in LABEL_PREDICATES:
+                    if label_pred in props:
+                        return props[label_pred]
+            # Fallback: try Resource name
+            try:
+                resource = Resource.objects.only('name', 'value').get(uri=uri)
+                if resource.name:
+                    return resource.name
+                if resource.value:
+                    return resource.value
+            except Resource.DoesNotExist:
+                pass
+            # Return last segment of URI as fallback
+            return uri.split('/')[-1] if '/' in uri else uri
+
+        def resolve_uri_with_link(uri: str) -> Dict[str, Any]:
+            """Resolve URI to label and optional Wikipedia link."""
+            label = resolve_uri_to_label(uri)
+            result = {'label': label, 'link': None}
+
+            if not uri or not uri.startswith('http'):
+                return result
+
+            # Check if it's a Sprache entity - construct Wikipedia link
+            if '/sprache/' in uri.lower() and uri in entity_properties:
+                props = entity_properties[uri]
+                # Try to get ISO code for Wikipedia link
+                iso_code = props.get('http://arkumu.org/data/det/properties/iso-639-1-code')
+                if iso_code and label:
+                    # Link to Wikipedia article about the language
+                    result['link'] = f'https://de.wikipedia.org/wiki/{label}_(Sprache)'
+
+            return result
+
+        # Fields that should be rendered as links
+        LINK_FIELDS = {
+            'http://arkumu.org/data/properties/originalsprache',  # Sprache in Projekteigenschaften
+            'http://arkumu.org/data/properties/externe-projektwebseite',
+        }
+
+        # Normdaten fields with URL templates
+        NORMDATEN_URL_TEMPLATES = {
+            'http://arkumu.org/data/properties/wikidata-id': 'https://www.wikidata.org/wiki/{}',
+            'http://arkumu.org/data/properties/gnd-nummer': 'https://d-nb.info/gnd/{}',
+            'http://arkumu.org/data/properties/viaf-id': 'https://viaf.org/viaf/{}',
+            'http://arkumu.org/data/properties/aat-id': 'https://www.getty.edu/vow/AATFullDisplay?find=&logic=AND&note=&subjectid={}',
+            'http://arkumu.org/data/properties/externe-projektwebseite': None,  # URL is the value itself
+        }
+
+        def extract_entries(canonical_fields: Sequence[Tuple[str, str, str]], resolve_uris: bool = True, as_links: bool = False) -> List[Dict[str, Any]]:
+            """Extract metadata entries for a list of canonical field definitions."""
+            entries = []
+            for field_key, label, canonical_uri in canonical_fields:
+                values = canonical_values.get(canonical_uri, [])
+                is_link_field = canonical_uri in LINK_FIELDS
+                url_template = NORMDATEN_URL_TEMPLATES.get(canonical_uri)
+
+                # Handle Normdaten fields with URL templates
+                if as_links and (url_template is not None or canonical_uri in NORMDATEN_URL_TEMPLATES):
+                    if values:
+                        # Build entries with links as list of {value, url} dicts
+                        linked_items = []
+                        for v in values:
+                            if url_template:
+                                url = url_template.format(v)
+                            else:
+                                # externe-projektwebseite: URL is the value itself
+                                url = v
+                            linked_items.append({'value': v, 'url': url})
+
+                        entry = {'key': label, 'label': label, 'is_link': True, 'linked_items': linked_items}
+                        entries.append(entry)
+                    else:
+                        entries.append(cls._metadata_entry(label, None))
+                elif resolve_uris and is_link_field:
+                    # Resolve with link support (e.g., Sprache)
+                    resolved = [resolve_uri_with_link(v) for v in values]
+                    if len(resolved) == 1:
+                        entry = cls._metadata_entry(label, resolved[0]['label'])
+                        if resolved[0]['link']:
+                            entry['is_link'] = True
+                            entry['url'] = resolved[0]['link']
+                        entries.append(entry)
+                    elif len(resolved) > 1:
+                        entry = cls._metadata_entry(label, [r['label'] for r in resolved])
+                        links = [r['link'] for r in resolved if r['link']]
+                        if links:
+                            entry['is_link'] = True
+                            entry['urls'] = links
+                        entries.append(entry)
+                    else:
+                        entries.append(cls._metadata_entry(label, None))
+                elif resolve_uris:
+                    values = [resolve_uri_to_label(v) for v in values]
+                    if len(values) == 1:
+                        entries.append(cls._metadata_entry(label, values[0]))
+                    elif len(values) > 1:
+                        entries.append(cls._metadata_entry(label, values))
+                    else:
+                        entries.append(cls._metadata_entry(label, None))
+                else:
+                    if len(values) == 1:
+                        entries.append(cls._metadata_entry(label, values[0]))
+                    elif len(values) > 1:
+                        entries.append(cls._metadata_entry(label, values))
+                    else:
+                        entries.append(cls._metadata_entry(label, None))
+            return entries
+
+        # Extract schlagworte - use deutsches-wikidata-label from graph or Wikidata API
+        schlagwort_uri = "http://arkumu.org/data/properties/schlagwort"
+        schlagworte = []
+        seen_schlagworte = set()  # Deduplicate
+        LABEL_PROP = 'http://arkumu.org/data/properties/deutsches-wikidata-label'
+
+        for value in canonical_values.get(schlagwort_uri, []):
+            # First try to get label from graph (deutsches-wikidata-label)
+            if value in entity_properties and LABEL_PROP in entity_properties[value]:
+                name = entity_properties[value][LABEL_PROP]
+                if name and name not in seen_schlagworte:
+                    seen_schlagworte.add(name)
+                    schlagworte.append({'id': value, 'name': name})
+                continue
+
+            # Extract Wikidata ID - handle both "Q123456" and ".../schlagwort/q123456" patterns
+            wikidata_id = value.split('/')[-1].upper() if '/' in value else value.upper()
+            if wikidata_id.startswith('Q') and wikidata_id[1:].isdigit():
+                name = wikidata_service.get_entity_label(wikidata_id=wikidata_id)
+                if name and name not in seen_schlagworte:
+                    seen_schlagworte.add(name)
+                    schlagworte.append({'id': wikidata_id, 'name': name})
+                continue
+
+            # Fallback: resolve as URI
+            name = resolve_uri_to_label(value)
+            if name and name != value and name not in seen_schlagworte:
+                seen_schlagworte.add(name)
+                schlagworte.append({'id': value, 'name': name})
+
+        # Extract kategorien with breadcrumb support
+        kategorie_uri = "http://arkumu.org/data/properties/projektkategorie"
+        kategorien = []
+        seen_kategorien = set()  # Deduplicate
+        BREADCRUMB_PROP = 'http://arkumu.org/data/properties/deutscher-name-der-projektkategorie-breadcrumb'
+
+        for value in canonical_values.get(kategorie_uri, []):
+            if value in seen_kategorien:
+                continue
+            seen_kategorien.add(value)
+
+            # Try to get breadcrumb from graph
+            breadcrumb_str = None
+            if value in entity_properties and BREADCRUMB_PROP in entity_properties[value]:
+                breadcrumb_str = entity_properties[value][BREADCRUMB_PROP]
+
+            if breadcrumb_str and ' > ' in breadcrumb_str:
+                # Parse breadcrumb string like "Darstellende Kunst > Theater > Musiktheater"
+                breadcrumbs = [b.strip() for b in breadcrumb_str.split(' > ')]
+                name = breadcrumbs[-1]  # Last segment is the category name
+            else:
+                # Fallback: resolve label
+                name = resolve_uri_to_label(value)
+                breadcrumbs = [name]
+
+            kategorien.append({'id': value, 'name': name, 'breadcrumbs': breadcrumbs})
+
+        # Extract related projects
+        related_projects = []
+        for rel_field_key, rel_label, rel_uri in cls.RELATION_CANONICAL:
+            for related_uri in canonical_values.get(rel_uri, []):
+                # Try to get the title of the related project
+                try:
+                    related_resource = Resource.objects.get(uri=related_uri)
+                    title = related_resource.name or related_uri
+                except Resource.DoesNotExist:
+                    title = related_uri
+                related_projects.append({
+                    'uri': related_uri,
+                    'title': title,
+                    'relation_type': rel_label,
+                })
+
+        return {
+            'allgemein': cls._filter_empty(extract_entries(cls.ALLGEMEIN_CANONICAL)),
+            'eigenschaften': cls._filter_empty(extract_entries(cls.EIGENSCHAFTEN_CANONICAL)),
+            'status': cls._filter_empty(extract_entries(cls.STATUS_CANONICAL, resolve_uris=False)),  # Keep raw values
+            'normdaten': cls._filter_empty(extract_entries(cls.NORMDATEN_CANONICAL, resolve_uris=False, as_links=True)),  # IDs as links
+            'ersteller': cls._filter_empty(extract_entries(cls.ERSTELLER_CANONICAL)),
+            'kategorien': kategorien,
+            'schlagworte': schlagworte,
+            'rechte': cls._filter_empty(extract_entries(cls.RECHTE_CANONICAL)),
+            'related_projects': related_projects,
+        }
+
+    @staticmethod
+    def _empty_metadata() -> Dict[str, Any]:
+        """Return empty metadata structure."""
+        return {
+            'allgemein': [],
+            'eigenschaften': [],
+            'status': [],
+            'normdaten': [],
+            'ersteller': [],
+            'kategorien': [],
+            'schlagworte': [],
+            'rechte': [],
+            'related_projects': [],
+        }
 
     @staticmethod
     def _find_record(records: List[ProjectRecord], uri: str) -> Optional[ProjectRecord]:
@@ -608,9 +969,8 @@ class ProjectView(LoginRequiredMixin, View):
         return None
 
     @staticmethod
-    def _build_metadata(record: ProjectRecord) -> List[Dict[str, Any]]:
-        institution_label = record.institution.label if record.institution and record.institution.label else ''
-        project_type = record.project_type.label if record.project_type and record.project_type.label else ''
+    def _build_metadata(record: ProjectRecord) -> Dict[str, Any]:
+        """Build grouped metadata dict from ProjectRecord."""
         rights_status_raw = record.rights_status
         rights_status = ''
         if rights_status_raw:
@@ -619,89 +979,96 @@ class ProjectView(LoginRequiredMixin, View):
             else:
                 candidate = getattr(rights_status_raw, 'label', rights_status_raw)
                 if isinstance(candidate, (list, tuple, set)):
-                    rights_status = [item for item in candidate if item]
+                    rights_status = ', '.join([item for item in candidate if item])
                 elif isinstance(candidate, str):
                     rights_status = candidate
                 else:
                     rights_status = str(candidate) if candidate else ''
+
         catchphrase_labels = [item.label for item in record.catchphrases if item.label]
         category_labels = [item.label for item in record.categories if item.label]
-        digital_object_paths = [item.path for item in record.digital_objects if item.path]
-        alternative_titles = [item.value for item in record.alternative_titles if item.value]
 
-        categories_name = []
-        for i,w in enumerate(category_labels):
-            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
-        category_labels = categories_name
+        # Resolve Wikidata IDs
+        wikidata_service = WikidataService()
+        schlagworte = []
+        for label in catchphrase_labels:
+            name = wikidata_service.get_entity_label(wikidata_id=label)
+            if name:
+                schlagworte.append({'id': label, 'name': name})
 
-        categories_name = []
-        for i,w in enumerate(catchphrase_labels):
-            categories_name.append(WikidataService().get_entity_label(wikidata_id=w))
-        catchphrase_labels = categories_name
+        kategorien = []
+        for label in category_labels:
+            name = wikidata_service.get_entity_label(wikidata_id=label) or label
+            kategorien.append({'id': label, 'name': name, 'breadcrumbs': [name]})
 
-        # Metadata aus Deutschem und Englischem Kommentar sowie Sprache des Titels und Untertitels extrahieren
+        # Extract comments and language info from Entity
         ent = Entity(record.uri)
         comment_de = ent.resources.get("Deutscher Kommentar")[0].value if ent.resources.get("Deutscher Kommentar") else ''
         comment_en = ent.resources.get("Englischer Kommentar")[0].value if ent.resources.get("Englischer Kommentar") else ''
         lang_title = ent.resources.get("Sprache des bevorzugten Titels")[0].uri if ent.resources.get("Sprache des bevorzugten Titels") else ''
         lang_sub_title = ent.resources.get("Sprache des bevorzugten Untertitels")[0].uri if ent.resources.get("Sprache des bevorzugten Untertitels") else ''
 
-        # Mappe CSV-Spalten auf ProjectRecord-Eigenschaften
-        metadata_entries = [
-            ProjectView._metadata_entry('Projekt URI', record.uri),
-            ProjectView._metadata_entry('Institution', institution_label),
-            ProjectView._metadata_entry('Projektart', project_type),
-            ProjectView._metadata_entry('Schlagworte', catchphrase_labels),
-            ProjectView._metadata_entry('Kategorien', category_labels),
-            ProjectView._metadata_entry('Digitale Objekte', digital_object_paths),
-            ProjectView._metadata_entry('Alternative Titel', alternative_titles),
-            ProjectView._metadata_entry('Kommentar DE', comment_de),
-            ProjectView._metadata_entry('Kommentar EN', comment_en),
-            ProjectView._metadata_entry('Sprache Titel', lang_title),
-            ProjectView._metadata_entry('Sprache Untertitel', lang_sub_title),
-            ProjectView._metadata_entry("Rechtsstatus",rights_status),
-        ]
-
-        if record.events:
-            metadata_entries.append(ProjectView._metadata_entry('Anzahl Ereignisse', len(record.events)))
-
-        metadata_entries.extend(
-            ProjectView._dataclass_metadata_entries(
-                record.properties,
-                ProjectView.PROPERTY_METADATA_FIELDS,
-                prefix="Eigenschaften",
-            )
-        )
-        metadata_entries.extend(
-            ProjectView._dataclass_metadata_entries(
-                record.status,
-                ProjectView.STATUS_METADATA_FIELDS,
-                prefix="Status",
-            )
-        )
-        metadata_entries.extend(
-            ProjectView._dataclass_metadata_entries(
-                record.authority,
-                ProjectView.AUTHORITY_METADATA_FIELDS,
-                prefix="Normdaten",
-            )
-        )
-        metadata_entries.extend(
-            ProjectView._dataclass_metadata_entries(
-                record.submitter,
-                ProjectView.SUBMITTER_METADATA_FIELDS,
-                prefix="Einreichung",
-            )
-        )
-        metadata_entries.extend(
-            ProjectView._dataclass_metadata_entries(
+        # Build grouped structure
+        metadata = {
+            'allgemein': ProjectView._filter_empty([
+                ProjectView._metadata_entry('Kommentar DE', comment_de),
+                ProjectView._metadata_entry('Kommentar EN', comment_en),
+                ProjectView._metadata_entry('Sprache Titel', lang_title),
+                ProjectView._metadata_entry('Sprache Untertitel', lang_sub_title),
+            ]),
+            'eigenschaften': ProjectView._filter_empty(
+                ProjectView._dataclass_metadata_entries_simple(
+                    record.properties,
+                    ProjectView.PROPERTY_METADATA_FIELDS,
+                )
+            ),
+            'status': ProjectView._filter_empty(
+                ProjectView._dataclass_metadata_entries_simple(
+                    record.status,
+                    ProjectView.STATUS_METADATA_FIELDS,
+                )
+            ),
+            'normdaten': ProjectView._filter_empty(
+                ProjectView._dataclass_metadata_entries_simple(
+                    record.authority,
+                    ProjectView.AUTHORITY_METADATA_FIELDS,
+                )
+            ),
+            'ersteller': ProjectView._filter_empty(
+                ProjectView._dataclass_metadata_entries_simple(
+                    record.submitter,
+                    ProjectView.SUBMITTER_METADATA_FIELDS,
+                )
+            ),
+            'kategorien': kategorien,
+            'schlagworte': schlagworte,
+            'rechte': ProjectView._filter_empty([
+                ProjectView._metadata_entry('Rechtsstatus', rights_status),
+            ] + ProjectView._dataclass_metadata_entries_simple(
                 record.licenses,
                 ProjectView.LICENSE_METADATA_FIELDS,
-                prefix="Lizenzen",
-            )
-        )
+            )),
+            'related_projects': [],  # Placeholder for future implementation
+        }
 
-        return metadata_entries
+        return metadata
+
+    @classmethod
+    def _dataclass_metadata_entries_simple(
+        cls,
+        source: Any,
+        field_map: Sequence[Tuple[str, str]],
+    ) -> List[Dict[str, Any]]:
+        """Create metadata entries from a dataclass source without prefix."""
+        if not source:
+            return []
+
+        entries: List[Dict[str, Any]] = []
+        for field_name, label in field_map:
+            value = getattr(source, field_name, None)
+            entry = cls._metadata_entry(label, value)
+            entries.append(entry)
+        return entries
 
     @staticmethod
     def _log_project_record_debug(
@@ -778,26 +1145,6 @@ class ProjectView(LoginRequiredMixin, View):
             return not value.strip()
         return False
 
-    @classmethod
-    def _dataclass_metadata_entries(
-        cls,
-        source: Any,
-        field_map: Sequence[Tuple[str, str]],
-        *,
-        prefix: str,
-    ) -> List[Dict[str, Any]]:
-        if not source:
-            return []
-
-        entries: List[Dict[str, Any]] = []
-        for field_name, label in field_map:
-            value = getattr(source, field_name, None)
-            entry = cls._metadata_entry(f"{prefix} · {label}", value)
-            if entry.get('value') == '—' and 'values' not in entry:
-                continue
-            entries.append(entry)
-        return entries
-
     @staticmethod
     def _render_error(request, message: str):
         return render(request, 'catalog/design_error.html', {'error': message})
@@ -831,7 +1178,11 @@ class ProjectTabView(LoginRequiredMixin, View):
             if not project_data:
                 return HttpResponseNotFound("Project not found")
             project_context = ProjectView._build_context_from_project_data(project_data)
-            metadata: List[Dict[str, Any]] = []
+            metadata: Dict[str, Any] = {
+                'allgemein': [], 'eigenschaften': [], 'status': [], 'normdaten': [],
+                'ersteller': [], 'kategorien': [], 'schlagworte': [], 'rechte': [],
+                'related_projects': [],
+            }
         else:
             try:
                 record = ProjectView._load_record(projekt_uri)
@@ -846,12 +1197,27 @@ class ProjectTabView(LoginRequiredMixin, View):
 
         return self._render_tab(request, tab, project_context, metadata)
 
-    def _render_tab(self, request, tab: str, project_context: Dict[str, Any], metadata: List[Dict[str, Any]]):
+    def _render_tab(self, request, tab: str, project_context: Dict[str, Any], metadata: Dict[str, Any]):
         """Render the appropriate tab partial."""
         if tab == 'events':
             return render(request, 'catalog/partials/project_events.html', {'events': project_context['events']})
 
         if tab == 'metadata':
+            # Use graph-based extraction for metadata tab - fully schema-driven
+            projekt_uri = project_context.get('uri', '')
+            org_code = self._get_org_code_for_uri(projekt_uri)
+            if org_code:
+                metadata = ProjectView._build_metadata_from_graph(projekt_uri, org_code)
             return render(request, 'catalog/partials/project_metadata.html', {'metadata': metadata})
 
         return render(request, 'catalog/partials/project_overview.html', {'project': project_context})
+
+    @staticmethod
+    def _get_org_code_for_uri(projekt_uri: str) -> Optional[str]:
+        """Get organization code for a project URI."""
+        from arkumu.metadata.models import Resource
+        try:
+            resource = Resource.objects.select_related('organization').get(uri=projekt_uri)
+            return resource.organization.code if resource.organization else None
+        except Resource.DoesNotExist:
+            return None

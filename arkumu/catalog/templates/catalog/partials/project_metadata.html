@@ -4,56 +4,15 @@
             theme-blue:text-arkumu-blue">
   <div class="w-full max-w-7xl mx-auto">
     <h2 class="text-3xl font-medium mb-6" tabindex="0">Metadaten</h2>
-    <div class="overflow-x-auto p-4 transition-colors
-                theme-dark:border-arkumu-light/20">
-      <table class="min-w-full text-sm">
-        <tbody
-          class="divide-y divide-arkumu-dark theme-dark:divide-arkumu-light theme-blue:divide-arkumu-blue">
-        {% for item in metadata %}
-          <!-- Hauptzeile -->
-          {% if item.value != "—" %}
-            <tr class="border-b border-arkumu-dark theme-dark:border-arkumu-light theme-blue:border-arkumu-blue">
-              <th class="text-left py-3 font-mono uppercase tracking-wide text-xs
-                          text-arkumu-dark/70 theme-dark:text-arkumu-light theme-blue:text-arkumu-blue"
-                  tabindex="0">
-                {{ item.label|default:item.key }}
-              </th>
-              <td class="py-3 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue"
-                  tabindex="0">
-                {% if item.value_list %}
-                  {% for entry in item.value_list %}
-                    <div>{{ entry }}</div>
-                  {% endfor %}
-                {% else %}
-                  {{ item.value }}
-                {% endif %}
-              </td>
-            </tr>
-          {% endif %}
 
-          <!-- Zusätzliche Stichpunkte -->
-          {% if item.additionalNotes %}
-          <tr>
-            <td colspan="2" class="pb-3 px-4 border-b
-                                  border-arkumu-dark
-                                  theme-dark:border-arkumu-light
-                                  theme-blue:border-arkumu-blue">
-              <div class="mt-1 text-xs
-                         text-arkumu-dark/60
-                         theme-dark:text-arkumu-light
-                         theme-blue:text-arkumu-blue">
-                <ul class="list-disc list-inside space-y-1">
-                  {% for note in item.additionalNotes %}
-                    <li>{{ note }}</li>
-                  {% endfor %}
-                </ul>
-              </div>
-            </td>
-          </tr>
-          {% endif %}
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    {% include 'catalog/partials/metadata/allgemein.html' %}
+    {% include 'catalog/partials/metadata/projekteigenschaften.html' %}
+    {% include 'catalog/partials/metadata/status_signaturen.html' %}
+    {% include 'catalog/partials/metadata/normdaten.html' %}
+    {% include 'catalog/partials/metadata/ersteller.html' %}
+    {% include 'catalog/partials/metadata/kategorisierung.html' %}
+    {% include 'catalog/partials/metadata/rechteverwaltung.html' %}
+    {% include 'catalog/partials/metadata/projekte_relation.html' %}
+
   </div>
 </div>

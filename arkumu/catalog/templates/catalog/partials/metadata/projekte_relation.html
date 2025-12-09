@@ -1,0 +1,24 @@
+{% if metadata.related_projects %}
+<div class="mb-8 border border-dashed border-arkumu-dark/30 theme-dark:border-arkumu-light/30 theme-blue:border-arkumu-blue/30 p-4">
+  <h3 class="text-lg font-medium mb-4 transition-colors
+             text-arkumu-dark
+             theme-dark:text-arkumu-light
+             theme-blue:text-arkumu-blue"
+      tabindex="0">
+    Projekte in Relation
+  </h3>
+  <div class="space-y-2">
+    {% for related in metadata.related_projects %}
+      <a href="/catalog/projekt/?projekt={{ related.uri|urlencode }}"
+         class="block underline text-arkumu-dark hover:opacity-70 transition-opacity
+                theme-dark:text-arkumu-light theme-blue:text-arkumu-blue">
+        {{ related.title }}
+      </a>
+    {% empty %}
+      <p class="text-arkumu-dark/50 theme-dark:text-arkumu-light/50 theme-blue:text-arkumu-blue/50 text-sm">
+        Keine verwandten Projekte gefunden.
+      </p>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}

@@ -1,0 +1,52 @@
+{% if items %}
+<div class="mb-8">
+  <h3 class="text-lg font-medium mb-4 transition-colors
+             text-arkumu-dark
+             theme-dark:text-arkumu-light
+             theme-blue:text-arkumu-blue"
+      tabindex="0">
+    {{ title }}
+  </h3>
+  <table class="w-full text-sm">
+    <tbody class="divide-y divide-arkumu-dark/20 theme-dark:divide-arkumu-light/20 theme-blue:divide-arkumu-blue/20">
+      {% for item in items %}
+        {% if item.value != "—" or item.value_list %}
+          <tr>
+            <th class="text-left py-3 pr-4 w-1/3 align-top font-mono uppercase tracking-wide text-xs
+                       text-arkumu-dark/70 theme-dark:text-arkumu-light/70 theme-blue:text-arkumu-blue/70"
+                tabindex="0">
+              {{ item.label|default:item.key }}
+            </th>
+            <td class="py-3 text-arkumu-dark theme-dark:text-arkumu-light theme-blue:text-arkumu-blue"
+                tabindex="0">
+              {% if item.linked_items %}
+                {% for li in item.linked_items %}
+                  <a href="{{ li.url }}" target="_blank" rel="noopener"
+                     class="block underline hover:opacity-70 transition-opacity">{{ li.value }}</a>
+                {% endfor %}
+              {% elif item.value_list %}
+                {% for entry in item.value_list %}
+                  {% if item.is_link %}
+                    <a href="{{ entry }}" target="_blank" rel="noopener"
+                       class="block underline hover:opacity-70 transition-opacity">{{ entry }}</a>
+                  {% else %}
+                    <div>{{ entry }}</div>
+                  {% endif %}
+                {% endfor %}
+              {% elif item.is_link and item.url %}
+                <a href="{{ item.url }}" target="_blank" rel="noopener"
+                   class="underline hover:opacity-70 transition-opacity">{{ item.value }}</a>
+              {% elif item.is_link and item.value %}
+                <a href="{{ item.value }}" target="_blank" rel="noopener"
+                   class="underline hover:opacity-70 transition-opacity">{{ item.value }}</a>
+              {% else %}
+                {{ item.value }}
+              {% endif %}
+            </td>
+          </tr>
+        {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
