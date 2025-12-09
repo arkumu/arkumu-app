@@ -2162,6 +2162,10 @@ class ProjectIndexDbService:
                         wikidata = e.get("object_value")
                 if not label:
                     label = cat_node.get("name") or cat_node.get("value")
+                # Skip numeric-only values (e.g., "55,72" or "259-") - these are IDs, not labels
+                # KHM/HMT have these as raw IDs alongside resolved labels
+                if label and re.match(r'^[\d,\s-]+$', label.strip()):
+                    label = None
                 if not slug:
                     uri = cat_node.get("uri") or ""
                     if uri:
