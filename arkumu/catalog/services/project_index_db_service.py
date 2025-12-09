@@ -602,10 +602,15 @@ class ProjectIndexDbService:
         self,
         org_codes: Sequence[str] = DEFAULT_ORG_CODES,
         batch_size: int = 100,
+        prune_missing: bool = True,
     ) -> Dict[str, int]:
         """Rebuild index streaming through batches to minimize memory.
 
         For each batch: fetch graphs → build records → serialize RDF → bulk write → release.
+
+        Args:
+            prune_missing: If True, delete indices not seen during rebuild. Set False when
+                           rebuilding only a subset of orgs to avoid deleting other orgs' indices.
         """
         built_at = self.now
         total_count = 0
@@ -665,13 +670,13 @@ class ProjectIndexDbService:
             logger.info("Rebuilt %d indexes for org=%s", org_count, org_code)
             total_count += org_count
 
-        # Prune missing
-        if seen_ids:
+        # Prune missing (only if prune_missing=True, e.g., full rebuild)
+        if prune_missing and seen_ids:
             deleted, _ = ProjectIndex.objects.exclude(project_resource_id__in=seen_ids).delete()
             if deleted:
                 logger.info("Pruned %d stale indexes", deleted)
 
-        logger.info("Streaming rebuild complete: %d total indexes", total_count)
+        logger.info("Streaming rebuild complete: %d total indexes (prune=%s)", total_count, prune_missing)
         return {"project_index": total_count}
 
     def _process_streaming_batch(
@@ -977,11 +982,19 @@ class ProjectIndexDbService:
         actor_names = self._parse_names_from_dc(dc_creators, dc_contributors)
 
         # Build structured data for detail views
-        categories_structured = [
-            {"label": cat.label, "uri": getattr(cat, "uri", ""), "slug": getattr(cat, "slug", "")}
-            for cat in (record.categories or [])
-            if getattr(cat, "label", None)
-        ]
+        categories_structured = []
+        for cat in (record.categories or []):
+            label = getattr(cat, "label", None)
+            if not label:
+                continue
+            # Extract leaf label from breadcrumb
+            if " > " in label:
+                label = label.split(" > ")[-1]
+            categories_structured.append({
+                "label": label,
+                "uri": getattr(cat, "uri", ""),
+                "slug": getattr(cat, "slug", ""),
+            })
         actors_structured = [
             {"name": act.name, "roles": list(getattr(act, "roles", []) or []), "uri": getattr(act, "uri", "")}
             for act in (record.actors or [])
@@ -1112,13 +1125,26 @@ class ProjectIndexDbService:
         return tokens
 
     def _category_labels(self, record: ProjectRecord) -> List[str]:
+        """Extract category labels from record, converting breadcrumbs to leaf labels."""
         labels: List[str] = []
         for category in getattr(record, "categories", []) or []:
             label = getattr(category, "label", None)
             if not label:
                 continue
+            # Extract leaf label from breadcrumb (e.g., "Kunst > Skulptur" -> "Skulptur")
+            if " > " in label:
+                label = label.split(" > ")[-1]
+            # Skip invalid labels (numeric-only, Q-IDs, etc.)
             normalized = str(label).strip()
-            if normalized and normalized not in labels:
+            if not normalized:
+                continue
+            if normalized.isdigit():
+                continue
+            if normalized.startswith("Q") and normalized[1:].isdigit():
+                continue
+            if all(c.isdigit() or c in ",. -" for c in normalized):
+                continue
+            if normalized not in labels:
                 labels.append(normalized)
         return labels
 

@@ -138,7 +138,9 @@ class ProjectIndexAdmin(admin.ModelAdmin):
         "built_at",
         "source_version",
         "category_labels_display",
-        "actors_display",
+        "actor_names_display",
+        "dc_creators_display",
+        "dc_contributors_display",
         "years_display",
         "categories_json_display",
         "actors_json_display",
@@ -169,7 +171,13 @@ class ProjectIndexAdmin(admin.ModelAdmin):
             )
         }),
         ("Search Arrays (flat)", {
-            "fields": ("category_labels_display", "actors_display", "years_display"),
+            "fields": (
+                "category_labels_display",
+                "actor_names_display",
+                "dc_creators_display",
+                "dc_contributors_display",
+                "years_display",
+            ),
             "classes": ("collapse",),
         }),
         ("Structured Data (JSON)", {
@@ -245,11 +253,23 @@ class ProjectIndexAdmin(admin.ModelAdmin):
             return "-"
         return format_html("<br>".join(obj.category_labels[:20]))
 
-    @admin.display(description="Actors (flat)")
-    def actors_display(self, obj):
+    @admin.display(description="Actor Names (search)")
+    def actor_names_display(self, obj):
         if not obj.actor_names:
             return "-"
         return format_html("<br>".join(obj.actor_names[:20]))
+
+    @admin.display(description="DC Creators")
+    def dc_creators_display(self, obj):
+        if not obj.dc_creators:
+            return "-"
+        return format_html("<br>".join(obj.dc_creators[:20]))
+
+    @admin.display(description="DC Contributors")
+    def dc_contributors_display(self, obj):
+        if not obj.dc_contributors:
+            return "-"
+        return format_html("<br>".join(obj.dc_contributors[:20]))
 
     @admin.display(description="Years")
     def years_display(self, obj):

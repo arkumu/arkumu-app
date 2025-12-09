@@ -60,9 +60,10 @@ def extract_categories(index: TripleIndex, project_uri: str) -> List[ProjectCate
     categories = []
 
     for cat_uri in cat_uris:
-        cat_name = get_literal(index, cat_uri, Predicates.CATEGORY_NAME)
+        # Try deutscher-name first (leaf label), fall back to breadcrumb
+        cat_name = get_literal(index, cat_uri, Predicates.ACTOR_NAME)
         if not cat_name:
-            cat_name = get_literal(index, cat_uri, Predicates.ACTOR_NAME)
+            cat_name = get_literal(index, cat_uri, Predicates.CATEGORY_NAME)
 
         slug = cat_uri.rstrip("/").split("/")[-1] if cat_uri else None
 
