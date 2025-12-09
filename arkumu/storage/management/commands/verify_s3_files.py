@@ -97,7 +97,9 @@ class Command(BaseCommand):
 
         try:
             iterator = queryset.iterator()
-            for obj in iterator:
+            for idx, obj in enumerate(iterator, 1):
+                self.stdout.write(f"[{idx}/{total}] Verifying: {obj.s3_key}", ending="\r")
+                self.stdout.flush()
                 # Only use obj.organization or explicit --bucket flag
                 # Do NOT fallback to session.organization (unreliable)
                 bucket_name = obj.organization or bucket
@@ -152,7 +154,10 @@ class Command(BaseCommand):
                     continue
 
                 stored = False
-                if etag and not obj.is_multipart_upload(etag):
+                # Skip if checksum already exists
+                if obj.sha256_checksum:
+                    stored = True
+                elif etag and not obj.is_multipart_upload(etag):
                     obj._store_checksum("md5", etag)
                     stored = True
                 else:
