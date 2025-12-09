@@ -173,32 +173,23 @@ class ProjectIndex(models.Model):
             "digital_objects": list(self.digital_object_paths or []),
         }
 
-        # Use structured actors data if available
-        if self.actors:
-            for idx, actor in enumerate(self.actors[:4]):
-                name = actor.get('name', '')
-                if not name:
-                    continue
+        # Use dc_creators and dc_contributors (formatted as "Name (Role)" or "Name")
+        all_contributors = list(self.dc_creators or []) + list(self.dc_contributors or [])
+        for idx, entry in enumerate(all_contributors[:4]):
+            if not entry:
+                continue
+            # Parse "Name (Role)" format - extract name and role separately
+            if " (" in entry and entry.endswith(")"):
+                name, role = entry.rsplit(" (", 1)
+                role = role[:-1]  # Remove trailing ")"
+            else:
+                name = entry
+                role = ""
+            card[f"contributor{idx + 1}_name"] = name
+            card[f"contributor{idx + 1}_role"] = role
 
-                # Combine roles if available
-                roles = actor.get('roles', [])
-                role_str = ', '.join(roles) if roles else ''
-                card[f"contributor{idx + 1}_name"] = name
-                card[f"contributor{idx + 1}_role"] = role_str
-
-            if len(self.actors) > 4:
-                card["additional_contributors"] = f"{len(self.actors) - 4} weitere"
-
-        # Fallback to simple names if structured data is missing
-        elif self.actor_names:
-            for idx, name in enumerate(self.actor_names[:4]):
-                if not name:
-                    continue
-                card[f"contributor{idx + 1}_name"] = name
-                card[f"contributor{idx + 1}_role"] = ""  # Empty role
-
-            if len(self.actor_names) > 4:
-                card["additional_contributors"] = f"{len(self.actor_names) - 4} weitere"
+        if len(all_contributors) > 4:
+            card["additional_contributors"] = f"{len(all_contributors) - 4} weitere"
 
         if self.category_labels and len(self.category_labels) > 4:
             card["additional_categories"] = f"{len(self.category_labels) - 4} weitere"
