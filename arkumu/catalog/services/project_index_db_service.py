@@ -962,7 +962,6 @@ class ProjectIndexDbService:
         org_code = self._org_code(resource)
         institution_label = self._institution_label(record)
         category_labels = self._category_labels(record)
-        actor_names = self._actor_names(record)
         digital_object_paths = self._digital_object_paths(record)
         year_values = self._year_values(record)
         catchphrase_labels = [
@@ -971,6 +970,11 @@ class ProjectIndexDbService:
 
         # Extract DC metadata from record (fallback when precomputed_oai is None)
         dc_from_record = _extract_dc_metadata_from_record(record) if not precomputed_oai else None
+
+        # Extract actor names from dc_creators/dc_contributors for search
+        dc_creators = precomputed_oai.dc_creators if precomputed_oai else dc_from_record.creators
+        dc_contributors = precomputed_oai.dc_contributors if precomputed_oai else dc_from_record.contributors
+        actor_names = self._parse_names_from_dc(dc_creators, dc_contributors)
 
         # Build structured data for detail views
         categories_structured = [
@@ -1125,6 +1129,22 @@ class ProjectIndexDbService:
             if not name:
                 continue
             normalized = str(name).strip()
+            if normalized and normalized not in names:
+                names.append(normalized)
+        return names
+
+    def _parse_names_from_dc(self, dc_creators: List[str], dc_contributors: List[str]) -> List[str]:
+        """Extract just names from dc_creators/dc_contributors (which are 'Name (Role)' format)."""
+        names: List[str] = []
+        for entry in list(dc_creators or []) + list(dc_contributors or []):
+            if not entry:
+                continue
+            # Parse "Name (Role)" format
+            if " (" in entry and entry.endswith(")"):
+                name = entry.rsplit(" (", 1)[0]
+            else:
+                name = entry
+            normalized = name.strip()
             if normalized and normalized not in names:
                 names.append(normalized)
         return names
