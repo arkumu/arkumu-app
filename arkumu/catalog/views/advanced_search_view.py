@@ -34,17 +34,18 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
         institutions = request.GET.getlist('hochschule')
         categories = request.GET.getlist('kategorie')
         actors = request.GET.getlist('akteur')
+        schlagworte = request.GET.getlist('schlagwort')
 
         logger.info(
-            "ADVANCED_SEARCH: query=%s, institutions=%s, categories=%s, actors=%s",
-            query, institutions, categories, actors
+            "ADVANCED_SEARCH: query=%s, institutions=%s, categories=%s, actors=%s, schlagworte=%s",
+            query, institutions, categories, actors, schlagworte
         )
 
         try:
             index_service = ProjectIndexService(backend="db")
 
             # Determine if we have any filters
-            has_filters = query or institutions or categories or actors
+            has_filters = query or institutions or categories or actors or schlagworte
 
             if not has_filters:
                 # No filters: show random sample of projects
@@ -64,6 +65,7 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                     organ_code=org_code,
                     categories=categories if categories else None,
                     actors=actors if actors else None,
+                    catchphrases=schlagworte if schlagworte else None,
                 )
                 total_results = len(filtered_cards)
 
@@ -79,7 +81,7 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             dropdown_options = self._get_dropdown_options(institutions, categories, actors)
 
             # Build active filters for display
-            active_filters = self._build_active_filters(request, institutions, categories, actors)
+            active_filters = self._build_active_filters(request, institutions, categories, actors, schlagworte)
 
             query_params = request.GET.copy()
             query_params.pop('view', None)
@@ -185,6 +187,7 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
         institutions: List[str],
         categories: List[str],
         actors: List[str],
+        schlagworte: List[str],
     ) -> List[dict]:
         """Build list of active filters with remove URLs."""
         active_filters = []
@@ -219,6 +222,17 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                 'type': 'akteur',
                 'value': act,
                 'display_name': act,
+                'remove_url': f"{request.path}?{q.urlencode()}"
+            })
+
+        # Schlagwort filters
+        for sw in schlagworte:
+            q = request.GET.copy()
+            q.setlist('schlagwort', [s for s in schlagworte if s != sw])
+            active_filters.append({
+                'type': 'schlagwort',
+                'value': sw,
+                'display_name': sw,
                 'remove_url': f"{request.path}?{q.urlencode()}"
             })
 

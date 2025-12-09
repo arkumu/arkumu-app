@@ -556,6 +556,7 @@ class ProjectIndexService:
         organ_code: Optional[str] = None,
         categories: Optional[List[str]] = None,
         actors: Optional[List[str]] = None,
+        catchphrases: Optional[List[str]] = None,
         force_refresh: bool = False,
     ) -> List[Dict[str, Any]]:
         #Why on earth would anyone decide otherwise?
@@ -604,14 +605,19 @@ class ProjectIndexService:
                 # Use overlap to match any of the actor names
                 base_qs = base_qs.filter(actor_names__overlap=[a.strip() for a in actors])
 
+            # Filter by catchphrases/schlagworte (ArrayField overlap)
+            if catchphrases:
+                base_qs = base_qs.filter(catchphrase_labels__overlap=[c.strip() for c in catchphrases])
+
             cards = [entry.to_card_dict() for entry in base_qs.order_by("title")]
             logger.info(
-                "ProjectIndexService[db]: materialized %d cards (query='%s', organ_code='%s', categories=%s, actors=%s)",
+                "ProjectIndexService[db]: materialized %d cards (query='%s', organ_code='%s', categories=%s, actors=%s, catchphrases=%s)",
                 len(cards),
                 (query or "").strip(),
                 (organ_code or "").strip(),
                 categories,
                 actors,
+                catchphrases,
             )
             return cards
 
