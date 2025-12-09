@@ -104,6 +104,7 @@ class ProjectIndexAdmin(admin.ModelAdmin):
         "project_type_label",
         "category_count",
         "actor_count",
+        "catchphrase_count",
         "event_count",
         "public_access_level",
         "is_public_approved",
@@ -121,6 +122,7 @@ class ProjectIndexAdmin(admin.ModelAdmin):
         "project_type_label",
         "category_labels",
         "actor_names",
+        "catchphrase_labels",
     )
     list_filter = (
         "org_code",
@@ -139,6 +141,7 @@ class ProjectIndexAdmin(admin.ModelAdmin):
         "source_version",
         "category_labels_display",
         "actor_names_display",
+        "catchphrase_labels_display",
         "dc_creators_display",
         "dc_contributors_display",
         "years_display",
@@ -146,6 +149,7 @@ class ProjectIndexAdmin(admin.ModelAdmin):
         "actors_json_display",
         "events_json_display",
         "digital_objects_json_display",
+        "catchphrases_json_display",
         "properties_display",
         "authority_display",
         "record_json_preview",
@@ -174,6 +178,7 @@ class ProjectIndexAdmin(admin.ModelAdmin):
             "fields": (
                 "category_labels_display",
                 "actor_names_display",
+                "catchphrase_labels_display",
                 "dc_creators_display",
                 "dc_contributors_display",
                 "years_display",
@@ -184,6 +189,7 @@ class ProjectIndexAdmin(admin.ModelAdmin):
             "fields": (
                 "categories_json_display",
                 "actors_json_display",
+                "catchphrases_json_display",
                 "events_json_display",
                 "digital_objects_json_display",
             ),
@@ -235,6 +241,10 @@ class ProjectIndexAdmin(admin.ModelAdmin):
     def actor_count(self, obj):
         return len(obj.actor_names) if obj.actor_names else 0
 
+    @admin.display(description="Kw.")
+    def catchphrase_count(self, obj):
+        return len(obj.catchphrase_labels) if obj.catchphrase_labels else 0
+
     @admin.display(description="Evt.")
     def event_count(self, obj):
         return len(obj.events) if obj.events else 0
@@ -258,6 +268,12 @@ class ProjectIndexAdmin(admin.ModelAdmin):
         if not obj.actor_names:
             return "-"
         return format_html("<br>".join(obj.actor_names[:20]))
+
+    @admin.display(description="Catchphrases (flat)")
+    def catchphrase_labels_display(self, obj):
+        if not obj.catchphrase_labels:
+            return "-"
+        return format_html("<br>".join(obj.catchphrase_labels[:20]))
 
     @admin.display(description="DC Creators")
     def dc_creators_display(self, obj):
@@ -293,6 +309,15 @@ class ProjectIndexAdmin(admin.ModelAdmin):
         return format_html(
             '<pre style="max-height: 200px; overflow: auto; background: #f5f5f5; padding: 8px; font-size: 11px;">{}</pre>',
             json.dumps(obj.actors, indent=2, ensure_ascii=False),
+        )
+
+    @admin.display(description="Catchphrases (structured)")
+    def catchphrases_json_display(self, obj):
+        if not obj.catchphrases:
+            return "-"
+        return format_html(
+            '<pre style="max-height: 200px; overflow: auto; background: #f5f5f5; padding: 8px; font-size: 11px;">{}</pre>',
+            json.dumps(obj.catchphrases, indent=2, ensure_ascii=False),
         )
 
     @admin.display(description="Events")
