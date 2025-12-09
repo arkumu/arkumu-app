@@ -234,6 +234,10 @@ class ProjectIndex(models.Model):
         """Build the context dict for project detail view templates."""
         normalized_events = []
         for event in self.events or []:
+            # Skip junction entities without proper event data (e.g., HMT kreuz-projekt-ereignis)
+            name = event.get("name")
+            if not name or (isinstance(name, str) and name.isdigit()):
+                continue
             actors = event.get("actors", [])
             start = event.get("start")
             end = event.get("end")

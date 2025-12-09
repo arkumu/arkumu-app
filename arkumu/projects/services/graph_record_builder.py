@@ -334,6 +334,10 @@ def extract_events(index: TripleIndex, project_uri: str) -> List[ProjectEvent]:
         # KHM: only grundereignis
         if "/khm/" in uri_lower:
             return "grundereignis" in uri_lower
+        # HMT: exclude junction entities (kreuz-projekt-ereignis)
+        if "/hmt/" in uri_lower:
+            if "kreuz-projekt-ereignis" in uri_lower:
+                return False
         # Other orgs: any ereignis
         return "ereignis" in uri_lower
 
