@@ -33,7 +33,7 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
         query = request.GET.get('query', '').strip() or None
         institutions = request.GET.getlist('hochschule')
         categories = request.GET.getlist('kategorie')
-        actors = request.GET.getlist('aktuer')
+        actors = request.GET.getlist('akteur')
 
         logger.info(
             "ADVANCED_SEARCH: query=%s, institutions=%s, categories=%s, actors=%s",
@@ -214,9 +214,9 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
         # Actor filters
         for act in actors:
             q = request.GET.copy()
-            q.setlist('aktuer', [a for a in actors if a != act])
+            q.setlist('akteur', [a for a in actors if a != act])
             active_filters.append({
-                'type': 'aktuer',
+                'type': 'akteur',
                 'value': act,
                 'display_name': act,
                 'remove_url': f"{request.path}?{q.urlencode()}"

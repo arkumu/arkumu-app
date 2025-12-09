@@ -52,7 +52,7 @@
       {% include "components/inputs/autocomplete_filter.html" with filter_type="hochschule" param_name="hochschule" placeholder="Hochschule" selected_values=institution %}
 
       <!-- Filter 2: Akteur*in -->
-      {% include "components/inputs/autocomplete_filter.html" with filter_type="akteur" param_name="aktuer" placeholder="Akteur*in" selected_values=actor %}
+      {% include "components/inputs/autocomplete_filter.html" with filter_type="akteur" param_name="akteur" placeholder="Akteur*in" selected_values=actor %}
 
       <!-- Filter 3: Projektkategorie -->
       {% include "components/inputs/autocomplete_filter.html" with filter_type="kategorie" param_name="kategorie" placeholder="Projektkategorie" selected_values=category %}
@@ -276,7 +276,7 @@
     }
 
     // Collect values from each filter type
-    ['hochschule', 'aktuer', 'kategorie'].forEach(paramName => {
+    ['hochschule', 'akteur', 'kategorie'].forEach(paramName => {
       const hiddenInputs = document.querySelectorAll(`input[type="hidden"][name="${paramName}"]`);
       hiddenInputs.forEach(input => {
         urlParams.append(paramName, input.value);

@@ -63,19 +63,19 @@
            data-rdf-type="http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle">
         {% if contributor1_name %}
           <span data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?aktuer={{ contributor1_name }}&view=card_lateral">{{ contributor1_name }}</a>{% if contributor1_role %} [{{ contributor1_role }}]{% endif %}</span>{% if contributor2_name or contributor3_name or contributor4_name %}, {% endif %}
+                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?akteur={{ contributor1_name }}&view=card_lateral">{{ contributor1_name }}</a>{% if contributor1_role %} [{{ contributor1_role }}]{% endif %}</span>{% if contributor2_name or contributor3_name or contributor4_name %}, {% endif %}
         {% endif %}
         {% if contributor2_name %}
           <span data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?aktuer={{ contributor2_name }}&view=card_lateral">{{ contributor2_name }}</a>{% if contributor2_role %} [{{ contributor2_role }}]{% endif %}</span>{% if contributor3_name or contributor4_name %}, {% endif %}
+                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?akteur={{ contributor2_name }}&view=card_lateral">{{ contributor2_name }}</a>{% if contributor2_role %} [{{ contributor2_role }}]{% endif %}</span>{% if contributor3_name or contributor4_name %}, {% endif %}
         {% endif %}
         {% if contributor3_name %}
           <span data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?aktuer={{ contributor3_name }}&view=card_lateral">{{ contributor3_name }}</a>{% if contributor3_role %} [{{ contributor3_role }}]{% endif %}</span>{% if contributor4_name %}, {% endif %}
+                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?akteur={{ contributor3_name }}&view=card_lateral">{{ contributor3_name }}</a>{% if contributor3_role %} [{{ contributor3_role }}]{% endif %}</span>{% if contributor4_name %}, {% endif %}
         {% endif %}
         {% if contributor4_name %}
           <span data-rdf-property="http://arkumu.org/data/properties/akteurin-im-ereignis"
-                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?aktuer={{ contributor4_name }}&view=card_lateral">{{ contributor4_name }}</a>{% if contributor4_role %} [{{ contributor4_role }}]{% endif %}</span>
+                data-rdf-actor-type="http://arkumu.org/data/types/akteurin"><a href="/catalog/advanced-search/?akteur={{ contributor4_name }}&view=card_lateral">{{ contributor4_name }}</a>{% if contributor4_role %} [{{ contributor4_role }}]{% endif %}</span>
         {% endif %}
         {% if additional_contributors %}{{ additional_contributors }}{% endif %}
       </div>

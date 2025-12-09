@@ -17,7 +17,7 @@ class FilterAutocompleteView(GeneralLoginRequiredMixin, View):
     def get(self, request, filter_type):
         query = request.GET.get('q', '').strip().lower()
         # Get selected values based on filter type's param name
-        param_map = {'akteur': 'aktuer', 'kategorie': 'kategorie', 'hochschule': 'hochschule'}
+        param_map = {'akteur': 'akteur', 'kategorie': 'kategorie', 'hochschule': 'hochschule'}
         param_name = param_map.get(filter_type, filter_type)
         selected = request.GET.getlist(param_name, [])
 
