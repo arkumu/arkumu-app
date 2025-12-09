@@ -62,12 +62,15 @@ class CatalogConfig(AppConfig):
         if not is_management_cmd:
             threading.Thread(target=_rebuild_index_if_empty, daemon=True).start()
 
-        # Warm card cache asynchronously (skip for Huey - it doesn't serve web requests)
+        # Warm in-memory cards cache at startup (skip for management commands)
         if not is_management_cmd:
-            try:
-                from arkumu.catalog.services.project_card_search_service import ProjectCardSearchService
+            def _warm_cards():
+                try:
+                    import time
+                    time.sleep(3)  # Wait for DB and index to be ready
+                    from arkumu.catalog.services.project_index_service import warm_cards_cache
+                    warm_cards_cache()
+                except Exception:
+                    logger.exception("CatalogConfig: failed to warm cards cache")
 
-                service = ProjectCardSearchService()
-                service.preload_cache_async()
-            except Exception:
-                logger.exception("CatalogConfig: failed to schedule card cache preload")
+            threading.Thread(target=_warm_cards, daemon=True).start()

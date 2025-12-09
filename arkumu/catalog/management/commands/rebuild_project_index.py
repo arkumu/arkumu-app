@@ -64,6 +64,11 @@ class Command(BaseCommand):
 
         elapsed = time.perf_counter() - start
 
+        # Invalidate and re-warm the in-memory cards cache
+        from arkumu.catalog.services.project_index_service import invalidate_cards_cache, warm_cards_cache
+        invalidate_cards_cache()
+        warm_cards_cache()
+
         self.stdout.write(
             self.style.SUCCESS(
                 f"Rebuilt project index ({backend}): index={result.get('project_index', 0)} in {elapsed:.2f}s",

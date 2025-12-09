@@ -33,6 +33,35 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Module-level cache for all cards (persists until app restart)
+_ALL_CARDS_CACHE: List[Dict[str, Any]] = []
+_CACHE_LOADED: bool = False
+
+
+def warm_cards_cache() -> int:
+    """Load all cards into memory at startup. Returns count of cached cards."""
+    global _ALL_CARDS_CACHE, _CACHE_LOADED
+    try:
+        base_qs = ProjectIndex.objects.filter(
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+        ).exclude(title__isnull=True).exclude(title='')
+        _ALL_CARDS_CACHE = [entry.to_card_dict() for entry in base_qs.order_by("title")]
+        _CACHE_LOADED = True
+        logger.info("warm_cards_cache: loaded %d cards into memory", len(_ALL_CARDS_CACHE))
+        return len(_ALL_CARDS_CACHE)
+    except Exception:
+        logger.exception("warm_cards_cache: failed to load cards")
+        return 0
+
+
+def invalidate_cards_cache() -> None:
+    """Clear the in-memory cards cache (call after index rebuild)."""
+    global _ALL_CARDS_CACHE, _CACHE_LOADED
+    _ALL_CARDS_CACHE = []
+    _CACHE_LOADED = False
+    logger.info("invalidate_cards_cache: cache cleared")
+
 
 class ProjectIndexService:
     """High-level read API for project cards and detail records.
@@ -511,7 +540,6 @@ class ProjectIndexService:
 
     def _get_graph_cards(self, *, force_refresh: bool = False) -> List[Dict[str, Any]]:
         """Build or return cached cards from the canonical project graph."""
-        force_refresh = True
         cache_key = "arkumu:project_index:graph_cards"
         if not force_refresh:
             cached = cache.get(cache_key)
@@ -582,6 +610,12 @@ class ProjectIndexService:
             return cards
 
         if self.backend == "db":
+            # Use in-memory cache when no filters applied
+            has_filters = query or organ_code or categories or actors or catchphrases or year_from or year_to
+            if not has_filters and _CACHE_LOADED and not force_refresh:
+                logger.debug("ProjectIndexService[db]: returning %d cards from memory cache", len(_ALL_CARDS_CACHE))
+                return _ALL_CARDS_CACHE
+
             base_qs = ProjectIndex.objects.filter(
                 public_access_level=PublicAccessLevel.PUBLIC,
                 is_public_approved=True,
