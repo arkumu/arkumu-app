@@ -227,8 +227,15 @@ class ProjectIndex(models.Model):
         normalized_events = []
         for event in self.events or []:
             actors = event.get("actors", [])
+            start = event.get("start")
+            end = event.get("end")
+            if start and end:
+                display_date = start if start == end else f"{start} – {end}"
+            else:
+                display_date = start or end or None
             normalized_event = {
                 **event,
+                "display_date": display_date,
                 "primary_actor": actors[0].get("name", "") if len(actors) > 0 else "",
                 "secondary_actor": actors[1].get("name", "") if len(actors) > 1 else "",
             }

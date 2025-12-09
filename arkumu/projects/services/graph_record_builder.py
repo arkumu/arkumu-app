@@ -295,12 +295,27 @@ def extract_events(index: TripleIndex, project_uri: str) -> List[ProjectEvent]:
     events = []
 
     # Direct event links from project
-    event_uris = get_all_object_uris(index, project_uri, Predicates.EVENT)
+    raw_event_uris = get_all_object_uris(index, project_uri, Predicates.EVENT)
+
+    # Filter to only include Grundereignis for KHM (skip weitereereignisse, physischesobjekt, etc.)
+    # For other orgs, include any URI with "ereignis"
+    def is_valid_event_uri(uri: str) -> bool:
+        uri_lower = uri.lower()
+        # KHM: only grundereignis
+        if "/khm/" in uri_lower:
+            return "grundereignis" in uri_lower
+        # Other orgs: any ereignis
+        return "ereignis" in uri_lower
+
+    event_uris = [uri for uri in raw_event_uris if is_valid_event_uri(uri)]
 
     # Find events that link TO this project (incoming links via PROJEKT predicate)
     # This handles KHM Grundereignis which links to project, not the other way around
     for subject in index.all_subjects:
         if subject in event_uris or subject == project_uri:
+            continue
+        # Only consider valid event URIs
+        if not is_valid_event_uri(subject):
             continue
         # Check if this entity links to our project via PROJEKT predicate
         project_link = get_object_uri(index, subject, Predicates.PROJEKT)
@@ -315,13 +330,30 @@ def extract_events(index: TripleIndex, project_uri: str) -> List[ProjectEvent]:
         if not event_desc:
             event_desc = get_literal(index, event_uri, Predicates.DESCRIPTION_DE)
 
+        # Get event type - can be literal (KHM) or entity link (FUK/RSH/DET/HMT)
+        event_type_label = get_literal(index, event_uri, Predicates.EVENT_TYPE)
+        # If it's a URI, follow the link to get the label
+        if event_type_label and event_type_label.startswith("http"):
+            event_type_uri = event_type_label
+            event_type_label = get_literal(index, event_type_uri, Predicates.EVENT_TYPE_NAME)
+            if not event_type_label:
+                # Fallback to deutscher-name
+                event_type_label = get_literal(index, event_type_uri, Predicates.ACTOR_NAME)
+        elif not event_type_label:
+            # Try getting as object URI and follow
+            event_type_uri = get_object_uri(index, event_uri, Predicates.EVENT_TYPE)
+            if event_type_uri:
+                event_type_label = get_literal(index, event_type_uri, Predicates.EVENT_TYPE_NAME)
+                if not event_type_label:
+                    event_type_label = get_literal(index, event_type_uri, Predicates.ACTOR_NAME)
+
         event = ProjectEvent(
             id=event_id,
             uri=event_uri,
             name=get_literal(index, event_uri, Predicates.EVENT_NAME),
             description=event_desc,
             location=get_literal(index, event_uri, Predicates.EVENT_LOCATION),
-            type=get_literal(index, event_uri, Predicates.EVENT_TYPE),
+            type=event_type_label,
             start=get_literal(index, event_uri, Predicates.EVENT_START),
             end=get_literal(index, event_uri, Predicates.EVENT_END),
             actors=extract_event_actors(index, event_uri),

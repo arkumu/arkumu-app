@@ -34,6 +34,7 @@ class Predicates:
     EVENT_LOCATION = "http://arkumu.org/data/properties/ereignisort"
     EVENT_DESCRIPTION = "http://arkumu.org/data/properties/ereignisbeschreibung"
     EVENT_TYPE = "http://arkumu.org/data/properties/ereignistyp"
+    EVENT_TYPE_NAME = "http://arkumu.org/data/properties/deutscher-name-des-ereignistyps"
 
     # Actor/Junction predicates
     ACTOR_LINK = "http://arkumu.org/data/properties/akteurin-im-ereignis"
