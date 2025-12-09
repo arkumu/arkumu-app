@@ -557,6 +557,8 @@ class ProjectIndexService:
         categories: Optional[List[str]] = None,
         actors: Optional[List[str]] = None,
         catchphrases: Optional[List[str]] = None,
+        year_from: Optional[int] = None,
+        year_to: Optional[int] = None,
         force_refresh: bool = False,
     ) -> List[Dict[str, Any]]:
         #Why on earth would anyone decide otherwise?
@@ -586,7 +588,7 @@ class ProjectIndexService:
             )
 
             if organ_code:
-                base_qs = base_qs.filter(institution_label__icontains=organ_code.strip())
+                base_qs = base_qs.filter(org_code__iexact=organ_code.strip())
 
             if query:
                 normalized_query = query.strip()
@@ -609,15 +611,26 @@ class ProjectIndexService:
             if catchphrases:
                 base_qs = base_qs.filter(catchphrase_labels__overlap=[c.strip() for c in catchphrases])
 
+            # Filter by year range
+            if year_from is not None or year_to is not None:
+                # Generate list of years in the requested range
+                start = year_from if year_from is not None else 1900
+                end = year_to if year_to is not None else 2100
+                year_range_list = list(range(start, end + 1))
+                # Filter projects that have at least one year in the range
+                base_qs = base_qs.filter(year_values__overlap=year_range_list)
+
             cards = [entry.to_card_dict() for entry in base_qs.order_by("title")]
             logger.info(
-                "ProjectIndexService[db]: materialized %d cards (query='%s', organ_code='%s', categories=%s, actors=%s, catchphrases=%s)",
+                "ProjectIndexService[db]: materialized %d cards (query='%s', organ_code='%s', categories=%s, actors=%s, catchphrases=%s, year_from=%s, year_to=%s)",
                 len(cards),
                 (query or "").strip(),
                 (organ_code or "").strip(),
                 categories,
                 actors,
                 catchphrases,
+                year_from,
+                year_to,
             )
             return cards
 

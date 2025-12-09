@@ -23,6 +23,14 @@ class ProjectIndex(models.Model):
     - Full record JSON blob (record_jsonb)
     """
 
+    ORG_CODE_TO_NAME = {
+        "fuk": "Folkwang Universität der Künste",
+        "rsh": "Robert Schumann Hochschule Düsseldorf",
+        "khm": "Kunsthochschule für Medien Köln",
+        "det": "Hochschule für Musik Detmold",
+        "hmt": "Hochschule für Musik und Tanz Köln",
+    }
+
     project_resource = models.OneToOneField(
         Resource,
         on_delete=models.CASCADE,
@@ -167,7 +175,7 @@ class ProjectIndex(models.Model):
             "title": self.title or "",
             "subtitle": self.subtitle or "",
             "image": _preferred_image(),
-            "institution": self.institution_label or "",
+            "institution": self.ORG_CODE_TO_NAME.get(self.org_code, self.org_code),
             "categories": list(self.category_labels or []),
             "year_range": self.year_range or "",
             "digital_objects": list(self.digital_object_paths or []),
@@ -250,7 +258,7 @@ class ProjectIndex(models.Model):
             ),
             "descriptions": [self.description] if self.description else [],
             "image": self._resolve_images(),
-            "institution": self.institution_label or "",
+            "institution": self.ORG_CODE_TO_NAME.get(self.org_code, self.org_code),
             "projektart": self.project_type_label or "",
             "year_range": self.year_range or "",
             "categories": self.categories or [],

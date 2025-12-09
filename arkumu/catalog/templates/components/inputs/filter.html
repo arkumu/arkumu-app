@@ -106,7 +106,7 @@
                     theme-blue:bg-arkumu-blue
                     hover:h-10 active:h-9"
              style="left: 100%;"
-             data-value="2024"></div>
+             data-value="2025"></div>
       </div>
       <!-- Selected Range Display -->
       <!-- Year Labels -->
@@ -114,15 +114,15 @@
                   text-arkumu-dark
                   theme-dark:text-arkumu-light
                   theme-blue:text-arkumu-blue">
-        <span>{{ start_year|default:"1950" }}</span>
-        <span>{{ year_1960|default:"1960" }}</span>
-        <span>{{ year_1970|default:"1970" }}</span>
-        <span>{{ year_1980|default:"1980" }}</span>
-        <span>{{ year_1990|default:"1990" }}</span>
-        <span>{{ year_2000|default:"2000" }}</span>
-        <span>{{ year_2010|default:"2010" }}</span>
-        <span>{{ year_2020|default:"2020" }}</span>
-        <span>{{ end_year|default:"Heute" }}</span>
+        <span>1950</span>
+        <span>1960</span>
+        <span>1970</span>
+        <span>1980</span>
+        <span>1990</span>
+        <span>2000</span>
+        <span>2010</span>
+        <span>2020</span>
+        <span>Heute</span>
       </div>
     </div>
   </div>
@@ -136,8 +136,9 @@
     const rangeTrack = document.getElementById('range-track');
     const rangeDisplay = document.getElementById('range-display');
 
+    // Match the visual labels: 1950 to 2025 (9 labels, 8 intervals of 10 years except last)
     const minYear = 1950;
-    const maxYear = 2024;
+    const maxYear = 2025;
     const yearRange = maxYear - minYear;
 
     let activeHandle = null;
@@ -200,12 +201,26 @@
       activeHandle = null;
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      // Trigger search when slider is released
+      if (typeof performSearch === 'function') {
+        performSearch();
+      }
     }
 
     handleStart.addEventListener('mousedown', (e) => handleMouseDown(e, handleStart));
     handleEnd.addEventListener('mousedown', (e) => handleMouseDown(e, handleEnd));
 
-    // Initialize
+    // Initialize from URL params
+    const urlParams = new URLSearchParams(window.location.search);
+    const jahrVon = parseInt(urlParams.get('jahr_von'), 10);
+    const jahrBis = parseInt(urlParams.get('jahr_bis'), 10);
+    if (jahrVon && jahrVon >= minYear && jahrVon <= maxYear) {
+      handleStart.style.left = yearToPercent(jahrVon) + '%';
+    }
+    if (jahrBis && jahrBis >= minYear && jahrBis <= maxYear) {
+      handleEnd.style.left = yearToPercent(jahrBis) + '%';
+    }
+
     updateRange();
   })();
 </script>
@@ -268,20 +283,42 @@
     const searchInput = document.getElementById('search-input');
     const searchTerm = searchInput ? searchInput.value.trim() : '';
 
-    // Collect all hidden inputs from autocomplete tags
+    // Start with existing URL params to preserve filters without UI (like schlagwort from links)
+    const currentParams = new URLSearchParams(window.location.search);
     const urlParams = new URLSearchParams();
 
     if (searchTerm) {
       urlParams.set('query', searchTerm);
     }
 
-    // Collect values from each filter type
-    ['hochschule', 'akteur', 'kategorie'].forEach(paramName => {
+    // Collect values from each filter type (from hidden inputs if present, else from URL)
+    ['hochschule', 'akteur', 'kategorie', 'schlagwort'].forEach(paramName => {
       const hiddenInputs = document.querySelectorAll(`input[type="hidden"][name="${paramName}"]`);
-      hiddenInputs.forEach(input => {
-        urlParams.append(paramName, input.value);
-      });
+      if (hiddenInputs.length > 0) {
+        hiddenInputs.forEach(input => {
+          urlParams.append(paramName, input.value);
+        });
+      } else {
+        // Preserve from current URL if no hidden inputs
+        currentParams.getAll(paramName).forEach(value => {
+          urlParams.append(paramName, value);
+        });
+      }
     });
+
+    // Add year range if not at default values
+    const handleStart = document.getElementById('handle-start');
+    const handleEnd = document.getElementById('handle-end');
+    if (handleStart && handleEnd) {
+      const startYear = parseInt(handleStart.dataset.value, 10);
+      const endYear = parseInt(handleEnd.dataset.value, 10);
+      if (startYear > 1950) {
+        urlParams.set('jahr_von', startYear);
+      }
+      if (endYear < 2025) {
+        urlParams.set('jahr_bis', endYear);
+      }
+    }
 
     // Reload page with new params
     window.location.search = urlParams.toString();

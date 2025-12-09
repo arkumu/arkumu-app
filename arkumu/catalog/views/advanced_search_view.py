@@ -35,17 +35,21 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
         categories = request.GET.getlist('kategorie')
         actors = request.GET.getlist('akteur')
         schlagworte = request.GET.getlist('schlagwort')
+        jahr_von = request.GET.get('jahr_von', '').strip()
+        jahr_bis = request.GET.get('jahr_bis', '').strip()
+        year_from = int(jahr_von) if jahr_von.isdigit() else None
+        year_to = int(jahr_bis) if jahr_bis.isdigit() else None
 
         logger.info(
-            "ADVANCED_SEARCH: query=%s, institutions=%s, categories=%s, actors=%s, schlagworte=%s",
-            query, institutions, categories, actors, schlagworte
+            "ADVANCED_SEARCH: query=%s, institutions=%s, categories=%s, actors=%s, schlagworte=%s, year_from=%s, year_to=%s",
+            query, institutions, categories, actors, schlagworte, year_from, year_to
         )
 
         try:
             index_service = ProjectIndexService(backend="db")
 
             # Determine if we have any filters
-            has_filters = query or institutions or categories or actors or schlagworte
+            has_filters = query or institutions or categories or actors or schlagworte or year_from or year_to
 
             if not has_filters:
                 # No filters: show random sample of projects
@@ -66,6 +70,8 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                     categories=categories if categories else None,
                     actors=actors if actors else None,
                     catchphrases=schlagworte if schlagworte else None,
+                    year_from=year_from,
+                    year_to=year_to,
                 )
                 total_results = len(filtered_cards)
 

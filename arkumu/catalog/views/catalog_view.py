@@ -41,9 +41,24 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             "det": "Hochschule für Musik Detmold",
             "hmt": "Hochschule für Musik und Tanz Köln"
         }
+        # Reverse mapping: full name -> short code
+        reverse_orga_mapping = {v: k for k, v in orga_mapping.items()}
 
-        orga_display = orga_mapping.get(orga_code, orga_code)
-        orga_code = orga_display
+        # Convert to display name for UI, and short code for filtering
+        if orga_code in orga_mapping:
+            # Short code provided (e.g., "fuk")
+            orga_display = orga_mapping[orga_code]
+            orga_code_short = orga_code
+        elif orga_code in reverse_orga_mapping:
+            # Full name provided (e.g., "Folkwang Universität der Künste")
+            orga_display = orga_code
+            orga_code_short = reverse_orga_mapping[orga_code]
+        else:
+            # Unknown, use as-is
+            orga_display = orga_code
+            orga_code_short = orga_code
+
+        orga_code = orga_code_short
         try:
             page = max(int(request.GET.get('page', 1)), 1)
         except ValueError:
