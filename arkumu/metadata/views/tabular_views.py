@@ -1052,6 +1052,45 @@ SCHLAGWORT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
 ]
 
 
+ALTERNATIVER_TITEL_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
+    {
+        "label": "set_id",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/alternativer-titel-set-id",
+            "set_id",
+        ),
+    },
+    {
+        "label": "alternativer_titel",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/alternativer-titel",
+            "alternativer_titel",
+        ),
+    },
+    {
+        "label": "alternativer_untertitel",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/alternativer-untertitel",
+            "alternativer_untertitel",
+        ),
+    },
+    {
+        "label": "sprache_titel",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/sprache-des-alternativen-titels",
+            "sprache_titel",
+        ),
+    },
+    {
+        "label": "sprache_untertitel",
+        "matchers": _expand_property_variants(
+            "http://arkumu.org/data/properties/sprache-des-alternativen-untertitels",
+            "sprache_untertitel",
+        ),
+    },
+]
+
+
 # Entity configuration - based on DigiKunst tabular view columns documentation
 # uri_contains patterns match actual slugified dataset names from schema manifests (FUK/RSH/DET)
 ENTITY_CONFIG: Dict[str, Dict] = {
@@ -1064,6 +1103,11 @@ ENTITY_CONFIG: Dict[str, Dict] = {
         'uri_contains': '/entities/akteurin-akteurin-kreuztabelle/',
         'dataset_name': 'AkteurIn_AkteurIn_Kreuztabelle',
         'columns': AKTEUR_RELATION_COLUMN_DEFINITIONS,
+    },
+    'alternativer_titel': {
+        'uri_contains': '/entities/alternativer-titel/',
+        'dataset_name': 'Alternativer_Titel',
+        'columns': ALTERNATIVER_TITEL_COLUMN_DEFINITIONS,
     },
     'bestehender_lizenzvertrag': {
         'uri_contains': '/entities/bestehender-lizenzvertrag/',
@@ -1207,6 +1251,7 @@ EDIT_URL_NAMES: Dict[str, str] = {
     'digitales_objekt': 'metadata:edit_digital_object',
     'equipment_software': 'metadata:edit_equipment_software',
     'ort': 'metadata:edit_ort',
+    'alternativer_titel': 'metadata:edit_alternativer_titel',
 }
 
 ENTITY_PARAM_MAP: Dict[str, str] = {
@@ -1219,6 +1264,7 @@ ENTITY_PARAM_MAP: Dict[str, str] = {
     'digitales_objekt': 'digitales_objekt',
     'equipment_software': 'equipment_software',
     'ort': 'ort',
+    'alternativer_titel': 'alternativer_titel',
 }
 
 AUDIT_COLUMN_DEFINITIONS: List[Dict[str, Any]] = [
@@ -1690,24 +1736,9 @@ def _tabular_view(request, entity_type: str):
     paginator = Paginator(subjects_qs, 20)
     page_obj = paginator.get_page(page_number)
 
+    # NOTE: EntityLabelResolver disabled for performance - it makes N+1 queries
+    # per entity. The _build_entity_label_map batch query is sufficient.
     label_resolver: Optional[EntityLabelResolver] = None
-    try:
-        mapping = Mapping.get_active_for_organization(org)
-    except Exception:
-        mapping = None
-        logger.debug("Failed to load mapping for org %s", org.code, exc_info=True)
-
-    if mapping:
-        try:
-            schema_service = SchemaWorkspaceService(mapping=mapping, organization=org)
-        except Exception:
-            logger.debug(
-                "Failed to initialize schema workspace service for org %s",
-                org.code,
-                exc_info=True,
-            )
-        else:
-            label_resolver = EntityLabelResolver(schema_service)
 
     # Build rows for current page
     rows, columns_meta = _build_rows_for_subjects(
@@ -1834,6 +1865,9 @@ def akteur_relation_table_view(request):
 
 def bestehender_lizenzvertrag_table_view(request):
     return _tabular_view(request, 'bestehender_lizenzvertrag')
+
+def alternativer_titel_table_view(request):
+    return _tabular_view(request, 'alternativer_titel')
 
 def digitales_objekt_table_view(request):
     return _tabular_view(request, 'digitales_objekt')

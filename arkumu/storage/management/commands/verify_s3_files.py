@@ -4,7 +4,6 @@ import hashlib
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-from django.db.models import Q
 
 from arkumu.storage.models import S3FileObject
 from arkumu.storage.services.base_storage_service import BaseStorageService
@@ -67,9 +66,8 @@ class Command(BaseCommand):
         queryset = S3FileObject.objects.all()
 
         if bucket:
-            queryset = queryset.filter(
-                Q(organization__iexact=bucket) | Q(session__s3_bucket__iexact=bucket)
-            )
+            # Only filter by organization field, not session.s3_bucket
+            queryset = queryset.filter(organization__iexact=bucket)
 
         if prefix:
             queryset = queryset.filter(s3_key__startswith=prefix)
@@ -94,17 +92,26 @@ class Command(BaseCommand):
         service = BaseStorageService()
         missing = 0
         updated_checksums = 0
+        skipped = 0
         failures: list[str] = []
 
         try:
             iterator = queryset.iterator()
             for obj in iterator:
-                bucket_name = (
-                    obj.organization
-                    or getattr(obj.session, "organization", None)
-                    or bucket
-                    or "fuk"
-                )
+                # Only use obj.organization or explicit --bucket flag
+                # Do NOT fallback to session.organization (unreliable)
+                bucket_name = obj.organization or bucket
+
+                # Skip files without determinable bucket
+                if not bucket_name:
+                    skipped += 1
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"Skipping S3FileObject {obj.pk}: no organization set"
+                        )
+                    )
+                    continue
+
                 key = obj.s3_key or ""
 
                 result = verify_single_object(
@@ -166,6 +173,13 @@ class Command(BaseCommand):
                     service.close()  # type: ignore[attr-defined]
                 except Exception:  # noqa: BLE001
                     pass
+
+        if skipped > 0:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Skipped {skipped} file(s) without determinable bucket/organization."
+                )
+            )
 
         if missing == 0:
             self.stdout.write(self.style.SUCCESS("All verified S3 objects exist."))

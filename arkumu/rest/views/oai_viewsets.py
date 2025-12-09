@@ -15,8 +15,7 @@ from arkumu.oaipmh.tailored_probe import (
     TailoredProbeStats,
     collect_probe_stats,
 )
-from arkumu.oaipmh.views.legacy import oai_endpoint
-from arkumu.oaipmh.views.router import oai_db_endpoint, oai_tailored_endpoint
+from arkumu.oaipmh.views.router import oai_endpoint, oai_db_endpoint, oai_tailored_endpoint
 
 from ..serializers import TailoredProbeRequestSerializer
 

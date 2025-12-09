@@ -54,15 +54,20 @@ class CatalogConfig(AppConfig):
         # Run in thread to avoid async context issues with ASGI
         threading.Thread(target=_warm_wikidata_cache, daemon=True).start()
 
-        # Rebuild index if empty (skip for management commands like migrate)
-        if 'migrate' not in sys.argv and 'makemigrations' not in sys.argv:
+        # Skip heavy initialization for management commands and Huey workers
+        skip_commands = ('migrate', 'makemigrations', 'run_huey')
+        is_management_cmd = any(cmd in sys.argv for cmd in skip_commands)
+
+        # Rebuild index if empty (skip for management commands and Huey)
+        if not is_management_cmd:
             threading.Thread(target=_rebuild_index_if_empty, daemon=True).start()
 
-        # Warm card cache asynchronously
-        try:
-            from arkumu.catalog.services.project_card_search_service import ProjectCardSearchService
+        # Warm card cache asynchronously (skip for Huey - it doesn't serve web requests)
+        if not is_management_cmd:
+            try:
+                from arkumu.catalog.services.project_card_search_service import ProjectCardSearchService
 
-            service = ProjectCardSearchService()
-            service.preload_cache_async()
-        except Exception:
-            logger.exception("CatalogConfig: failed to schedule card cache preload")
+                service = ProjectCardSearchService()
+                service.preload_cache_async()
+            except Exception:
+                logger.exception("CatalogConfig: failed to schedule card cache preload")

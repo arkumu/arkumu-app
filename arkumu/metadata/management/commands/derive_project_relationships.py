@@ -226,14 +226,22 @@ class Command(BaseCommand):
         the derived triples participate in the normal pattern workflow. The
         generated resources are flagged as derived by setting `is_derived` on the
         emitted triples, making it clear they were produced during post-processing.
+
+        Handles both:
+        - synonyme predicate (KHM style: category codes stored separately)
+        - projektkategorie predicate (HMT style: category codes stored directly)
         """
 
-        category_literal_predicate = "http://arkumu.org/data/properties/synonyme"
+        # Predicates that may contain literal category codes
+        category_literal_predicates = [
+            "http://arkumu.org/data/properties/synonyme",
+            "http://arkumu.org/data/properties/projektkategorie",
+        ]
         category_link_predicate = "http://arkumu.org/data/properties/projektkategorie"
 
         literal_triples = list(
             Triple.objects.filter(
-                predicate__canonical_uri=category_literal_predicate,
+                predicate__canonical_uri__in=category_literal_predicates,
                 subject__organization__code=org_code,
                 object__resource_type=ResourceType.LITERAL,
             ).select_related("subject", "object", "subject__organization")

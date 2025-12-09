@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from typing import Dict, Iterable, List
 from urllib.parse import urlencode
+
+logger = logging.getLogger(__name__)
 
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import render
@@ -65,6 +69,11 @@ class MetadataEntryMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMap
             "Equipment Software",
             "metadata:tabular_equipment_software",
         ),
+        (
+            "alternativer_titel",
+            "Alternative Titel",
+            "metadata:tabular_alternativer_titel",
+        ),
     )
     default_entity = "project"
 
@@ -92,7 +101,12 @@ class MetadataEntryMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMap
         return MetadataEntryService(organization_code)
 
     def _shared_context(self, request: HttpRequest) -> Dict[str, object]:
+        t0 = time.perf_counter()
+
         organizations = list(self._allowed_organizations())
+        t1 = time.perf_counter()
+        logger.info("_shared_context: _allowed_organizations %.3fs", t1 - t0)
+
         org_code = self._resolve_organization_code(request)
         context: Dict[str, object] = {
             "organizations": organizations,
@@ -102,6 +116,9 @@ class MetadataEntryMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMap
             request,
             active=True,
         )
+        t2 = time.perf_counter()
+        logger.info("_shared_context: navbar_render %.3fs", t2 - t1)
+
         if org_code:
             try:
                 service = self._build_service(org_code)
@@ -114,9 +131,13 @@ class MetadataEntryMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMap
                 context["organization"] = service.organization
         else:
             context["sections"] = []
+        t3 = time.perf_counter()
+        logger.info("_shared_context: service/sections %.3fs", t3 - t2)
 
         structure_service = ProjectStructureService()
         context["project_structure"] = structure_service.get_project_structure()
+        t4 = time.perf_counter()
+        logger.info("_shared_context: project_structure %.3fs", t4 - t3)
 
         recent_entries_service = RecentMetadataEntryService()
         allowed_codes = [org.code for org in organizations]
@@ -124,6 +145,9 @@ class MetadataEntryMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMap
             organization_code=org_code,
             fallback_codes=allowed_codes,
         )
+        t5 = time.perf_counter()
+        logger.info("_shared_context: recent_entries %.3fs", t5 - t4)
+
         context["organization_code"] = org_code
 
         selected_entity = self._resolve_entity_key(request)
@@ -134,6 +158,9 @@ class MetadataEntryMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMap
             (tab["url"] for tab in tabs if tab["key"] == selected_entity),
             tabs[0]["url"] if tabs else "",
         )
+        t6 = time.perf_counter()
+        logger.info("_shared_context: tabs %.3fs, TOTAL %.3fs", t6 - t5, t6 - t0)
+
         return context
 
     def _resolve_entity_key(self, request: HttpRequest) -> str:

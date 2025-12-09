@@ -3,20 +3,337 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from django.db import transaction
 from django.utils import timezone
+from lxml import etree as ET
 
 from arkumu.catalog.models import ProjectIndex
 from arkumu.catalog.services.project_detail_index_service import ProjectDetailIndexService
 from arkumu.catalog.services.triple_relationship_service import TripleRelationshipService
 from arkumu.common.hash_utils import generate_value_hash
 from arkumu.metadata.models import PublicAccessLevel, Resource, ResourceType
+from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph
 from arkumu.projects import ProjectDigitalObject, ProjectRecord
 from arkumu.projects.services import ProjectSnapshotService
+from arkumu.projects.services.graph_service import get_all_project_graphs_batched
 
 logger = logging.getLogger(__name__)
+
+# Default organization codes for cross-institutional rebuild
+DEFAULT_ORG_CODES = ("fuk", "rsh", "det", "khm", "hmt")
+
+
+@dataclass
+class DcMetadata:
+    """Pre-computed DC creator/contributor metadata."""
+    creators: List[str]
+    contributors: List[str]
+    has_copyright_holder: bool
+    has_neighbouring_rights_holder: bool
+
+
+def _extract_dc_metadata(resource: Resource, record: ProjectRecord) -> DcMetadata:
+    """Extract DC creators/contributors and rights flags from junction entities."""
+    from arkumu.oaipmh.views.metadata import _extract_creators_from_junctions
+
+    creators, contributors = _extract_creators_from_junctions(resource, record)
+
+    # Check for copyright/neighbouring rights holders in event actors
+    has_copyright = False
+    has_neighbouring = False
+    for event in (record.events or []):
+        for actor in (getattr(event, "actors", []) or []):
+            if getattr(actor, "is_copyright_holder", False):
+                has_copyright = True
+            if getattr(actor, "is_neighbouring_rights_holder", False):
+                has_neighbouring = True
+
+    return DcMetadata(
+        creators=creators,
+        contributors=contributors,
+        has_copyright_holder=has_copyright,
+        has_neighbouring_rights_holder=has_neighbouring,
+    )
+
+
+# Institution keywords to filter out from DC creators/contributors
+_INSTITUTION_KEYWORDS = (
+    "universität", "hochschule", "akademie", "institut", "university",
+    "college", "school", "academy", "institute", "stiftung", "foundation",
+)
+
+
+def _extract_dc_metadata_from_record(record: ProjectRecord) -> DcMetadata:
+    """Extract DC creators/contributors directly from ProjectRecord.
+
+    Uses actor data already in record.events[].actors[] without additional queries.
+    - Creator: is_copyright_holder=True OR is_neighbouring_rights_holder=True
+    - Contributor: neither is True
+    - Format: "Name (Role)" or just "Name"
+    - Skips institutions (Universität, Hochschule, etc.)
+    """
+    creators: List[str] = []
+    contributors: List[str] = []
+    seen_names: Set[str] = set()
+    has_copyright = False
+    has_neighbouring = False
+
+    def is_institution(name: str) -> bool:
+        name_lower = name.lower()
+        return any(kw in name_lower for kw in _INSTITUTION_KEYWORDS)
+
+    for event in (record.events or []):
+        for actor in (getattr(event, "actors", []) or []):
+            name = getattr(actor, "name", None)
+            if not name or name in seen_names:
+                continue
+            if is_institution(name):
+                continue
+            seen_names.add(name)
+
+            # Get first role if available
+            roles = getattr(actor, "roles", []) or []
+            role = roles[0] if roles else None
+
+            # Format as "Name (Role)" or just "Name"
+            formatted = f"{name} ({role})" if role else name
+
+            # Check rights flags
+            is_copyright = getattr(actor, "is_copyright_holder", False)
+            is_neighbouring = getattr(actor, "is_neighbouring_rights_holder", False)
+
+            if is_copyright:
+                has_copyright = True
+            if is_neighbouring:
+                has_neighbouring = True
+
+            # Creator if has copyright OR neighbouring rights
+            if is_copyright or is_neighbouring:
+                creators.append(formatted)
+            else:
+                contributors.append(formatted)
+
+    # Fallback: if no creators but have contributors, promote contributors to creators
+    # A work should have at least one dc:creator
+    if not creators and contributors:
+        creators = contributors
+        contributors = []
+
+    return DcMetadata(
+        creators=creators,
+        contributors=contributors,
+        has_copyright_holder=has_copyright,
+        has_neighbouring_rights_holder=has_neighbouring,
+    )
+
+
+def _serialize_canonical_rdf_xml(
+    resource: Resource,
+    graph_data: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Serialize canonical RDF/XML using CanonicalGraphService.
+
+    If graph_data is provided (bulk mode), uses it directly.
+    Otherwise fetches from CanonicalGraphService on-demand.
+    """
+    try:
+        if graph_data is None:
+            # Fetch on-demand using CanonicalGraphService
+            graph_service = CanonicalGraphService(org_code=None)
+            graph_data = graph_service.get_entity_graph(
+                resource.uri,
+                include_incoming=True,
+                expand_neighbors=True,
+                depth=2,
+            )
+        rdf_element = build_rdf_graph(resource, graph_data=graph_data)
+        return ET.tostring(rdf_element, encoding="unicode")
+    except Exception:
+        logger.exception("Failed to serialize canonical RDF/XML for %s", resource.uri)
+        return ""
+
+
+def _serialize_institutional_rdf_xml(
+    resource: Resource,
+    graph_data: Optional[Dict[str, Any]] = None,
+    org_code: Optional[str] = None,
+) -> str:
+    """Serialize institutional RDF/XML using InstitutionalGraphService.
+
+    If graph_data and org_code are provided (bulk mode), uses pre-fetched data.
+    Otherwise fetches on-demand using InstitutionalGraphService.
+
+    Args:
+        resource: The resource to serialize.
+        graph_data: Pre-fetched graph data from InstitutionalGraphService.get_entity_graphs_bulk().
+        org_code: Organization code for namespace prefixes.
+    """
+    from arkumu.oaipmh.views.institutional import (
+        _build_institutional_rdf_element,
+        build_institutional_rdf_from_graph,
+    )
+
+    try:
+        if graph_data and org_code:
+            # Fast path: use pre-fetched graph data (from bulk query)
+            nodes = graph_data.get("nodes") or {}
+            edges = graph_data.get("edges") or []
+            rdf_element = build_institutional_rdf_from_graph(nodes, edges, org_code)
+        else:
+            # Slow path: query InstitutionalGraphService on-demand
+            rdf_element = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+
+        if rdf_element is None:
+            return ""
+        return ET.tostring(rdf_element, encoding="unicode")
+    except Exception:
+        logger.exception("Failed to serialize institutional RDF/XML for %s", resource.uri)
+        return ""
+
+
+def _build_oai_from_graphs(
+    graphs: "ProjectGraphs",
+    resource: Resource,
+    record: ProjectRecord,
+) -> "PrecomputedOaiData":
+    """Build OAI data directly from pre-fetched ProjectGraphs.
+
+    Uses the same graph data for both canonical and institutional RDF,
+    avoiding redundant database queries.
+    """
+    # Get org_code for institutional RDF
+    org = getattr(resource, "organization", None)
+    org_code = str(getattr(org, "code", "") or "").strip().lower() if org else ""
+
+    # Convert ProjectGraphs to graph_data format
+    graph_data = graphs.to_graph_data()
+
+    # Generate RDF using the graph data
+    canonical_rdf_xml = _serialize_canonical_rdf_xml(resource, graph_data=graph_data)
+    institutional_rdf_xml = _serialize_institutional_rdf_xml(
+        resource, graph_data=graph_data, org_code=org_code
+    )
+
+    # Extract DC metadata from record (no extra queries)
+    dc_metadata = _extract_dc_metadata_from_record(record)
+
+    return PrecomputedOaiData(
+        canonical_rdf_xml=canonical_rdf_xml,
+        institutional_rdf_xml=institutional_rdf_xml,
+        dc_creators=dc_metadata.creators,
+        dc_contributors=dc_metadata.contributors,
+    )
+
+
+@dataclass
+class PrecomputedOaiData:
+    """Pre-computed OAI data for a resource."""
+    canonical_rdf_xml: str
+    institutional_rdf_xml: str
+    dc_creators: List[str]
+    dc_contributors: List[str]
+
+
+def _batch_precompute_oai_data(
+    resource_map: Dict[uuid.UUID, Resource],
+    record_map: Dict[uuid.UUID, Dict],
+    batch_size: int = 100,
+) -> Dict[uuid.UUID, PrecomputedOaiData]:
+    """Batch pre-compute OAI data using BULK graph fetching (much faster).
+
+    Args:
+        resource_map: Map of resource UUID -> Resource.
+        record_map: Map of resource UUID -> record dict.
+        batch_size: Number of resources to process per batch (for memory management).
+    """
+    from arkumu.metadata.services.institutional_graph_service import InstitutionalGraphService
+
+    results: Dict[uuid.UUID, PrecomputedOaiData] = {}
+    empty_result = PrecomputedOaiData(
+        canonical_rdf_xml="",
+        institutional_rdf_xml="",
+        dc_creators=[],
+        dc_contributors=[],
+    )
+
+    if not resource_map:
+        return results
+
+    resource_ids = [str(rid) for rid in resource_map.keys()]
+
+    # 1. Fetch ALL canonical graphs in ONE bulk query
+    logger.info("Fetching %d canonical graphs in bulk...", len(resource_ids))
+    canonical_service = CanonicalGraphService(org_code=None)
+    canonical_graphs = canonical_service.get_entity_graphs_bulk(resource_ids, depth=2)
+    logger.info("Canonical graph fetch complete.")
+
+    # 2. Group resources by org_code for institutional RDF
+    resources_by_org: Dict[str, List[uuid.UUID]] = {}
+    org_by_resource: Dict[uuid.UUID, str] = {}
+    for rid, resource in resource_map.items():
+        org = getattr(resource, "organization", None)
+        org_code = str(getattr(org, "code", "") or "").strip().lower() if org else ""
+        if org_code:
+            resources_by_org.setdefault(org_code, []).append(rid)
+            org_by_resource[rid] = org_code
+
+    # 3. Fetch institutional graphs per org (with batching)
+    institutional_graphs: Dict[str, Dict[str, Any]] = {}
+    for org_code, org_rids in resources_by_org.items():
+        org_resource_ids = [str(rid) for rid in org_rids]
+        logger.info("Fetching %d institutional graphs for org %s...", len(org_resource_ids), org_code)
+        inst_service = InstitutionalGraphService(org_code=org_code)
+        org_graphs = inst_service.get_entity_graphs_bulk(
+            org_resource_ids,
+            depth=2,
+            include_junctions=True,
+            batch_size=batch_size,
+        )
+        institutional_graphs.update(org_graphs)
+    logger.info("Institutional graph fetch complete.")
+
+    # 4. Serialize RDF for each resource using pre-fetched graph data
+    for rid, resource in resource_map.items():
+        try:
+            rid_str = str(rid)
+            canonical_graph = canonical_graphs.get(rid_str)
+            institutional_graph = institutional_graphs.get(rid_str)
+            org_code = org_by_resource.get(rid, "")
+
+            canonical_rdf = _serialize_canonical_rdf_xml(resource, graph_data=canonical_graph)
+            institutional_rdf = _serialize_institutional_rdf_xml(
+                resource,
+                graph_data=institutional_graph,
+                org_code=org_code,
+            )
+
+            # Extract DC metadata
+            creators: List[str] = []
+            contributors: List[str] = []
+            record_dict = record_map.get(rid)
+            if record_dict:
+                try:
+                    record = ProjectRecord.from_dict(record_dict)
+                    from arkumu.oaipmh.views.metadata import _extract_creators_from_junctions
+                    creators, contributors = _extract_creators_from_junctions(resource, record)
+                except Exception:
+                    logger.exception("Failed to extract DC metadata for %s", rid)
+
+            results[rid] = PrecomputedOaiData(
+                canonical_rdf_xml=canonical_rdf,
+                institutional_rdf_xml=institutional_rdf,
+                dc_creators=creators,
+                dc_contributors=contributors,
+            )
+        except Exception:
+            logger.exception("OAI data precomputation failed for %s", rid)
+            results[rid] = empty_result
+
+    return results
 
 
 # Canonical URIs for graph-based index building
@@ -47,6 +364,8 @@ class _CanonicalURIs:
     EVENT_NAME_ALT = "http://arkumu.org/data/properties/ereignisname"  # Canonical event name
     EVENT_LOCATION = "http://arkumu.org/data/properties/ereignisort"
     EVENT_DESCRIPTION = "http://arkumu.org/data/properties/ereignisbeschreibung"
+    EVENT_TYPE = "http://arkumu.org/data/properties/ereignistyp"
+    EVENT_TYPE_NAME = "http://arkumu.org/data/properties/deutscher-name-des-ereignistyps"
 
     # Actor junction properties (FUK uses junction table that links TO events/actors)
     JUNCTION_TO_EVENT = "http://arkumu.org/data/properties/im-ereignis"  # junction -> event (FUK)
@@ -56,6 +375,10 @@ class _CanonicalURIs:
 
     # Actor properties
     ACTOR_NAME = "http://arkumu.org/data/properties/deutscher-name"
+
+    # Rights properties (on junction entities)
+    IST_URHEBERIN = "http://arkumu.org/data/properties/ist-urheberin"
+    LEISTUNGSSCHUTZRECHTE = "http://arkumu.org/data/properties/besitzt-leistungsschutzrechte"
 
     # Role properties (rolle entity -> name)
     ROLE_GERMAN_NAME = "http://arkumu.org/data/properties/deutscher-name-der-rolle-breadcrumb"
@@ -78,7 +401,7 @@ class _CanonicalURIs:
     # Catchphrase properties
     CATCHPHRASE_NAME = "http://arkumu.org/data/properties/deutscher-name-des-schlagworts"
 
-    # Digital object properties
+    # Digital object properties (for image path resolution)
     DO_PATH = "http://arkumu.org/data/properties/dateipfad"
 
     # License properties
@@ -167,6 +490,7 @@ class _CanonicalURIs:
             cls.EVENT_NAME_ALT,
             cls.EVENT_LOCATION,
             cls.EVENT_DESCRIPTION,
+            cls.EVENT_TYPE,
             cls.ACTOR_LINK,
             cls.ACTOR_ROLE,
             cls.ROLE_GERMAN_NAME,  # For rolle entity name lookup
@@ -228,6 +552,7 @@ class ProjectIndexDbService:
         self.snapshot_service = ProjectSnapshotService()
         self.detail_service = ProjectDetailIndexService()
         self.now = now or timezone.now()
+        self._event_type_labels: Dict[str, str] = {}
 
     # ------------------------------------------------------------------ #
     # Public API                                                         #
@@ -238,28 +563,167 @@ class ProjectIndexDbService:
         *,
         project_uris: Optional[Sequence[str]] = None,
         force_snapshot: bool = False,
+        use_graph_service: bool = True,
+        batch_size: int = 100,
     ) -> Dict[str, int]:
-        """Rebuild index tables from ProjectRecord instances."""
+        """Rebuild index tables from ProjectRecord instances.
 
+        Uses graph_service by default for efficient batched fetching.
+        Streams batches through to minimize memory usage.
+
+        Args:
+            project_uris: Optional list of specific URIs to rebuild
+            force_snapshot: Force refresh of snapshot cache (only used if use_graph_service=False)
+            use_graph_service: Use graph_service for fetching (default True)
+            batch_size: Batch size for graph_service fetching (default 100)
+        """
         if project_uris:
+            # Single URIs mode - use old path
             records = self._records_for_uris(project_uris)
-        else:
-            snapshot = self.snapshot_service.get_cross_institutional_snapshot(
-                force_refresh=force_snapshot,
-                include_non_public=True,
-            )
-            records = list(snapshot.projects)
+            resources = self._resource_map(records)
+            source_version = self._source_version(resources.values(), records)
+            return self._write_indexes(records, resources, source_version, prune_missing=False)
 
+        if use_graph_service:
+            # Streaming mode - process batches completely, release memory after each
+            return self._rebuild_streaming(batch_size=batch_size)
+
+        # Snapshot mode - old path
+        snapshot = self.snapshot_service.get_cross_institutional_snapshot(
+            force_refresh=force_snapshot,
+            include_non_public=True,
+        )
+        records = list(snapshot.projects)
         resources = self._resource_map(records)
         source_version = self._source_version(resources.values(), records)
-        prune_missing = not bool(project_uris)
+        return self._write_indexes(records, resources, source_version, prune_missing=True)
 
-        return self._write_indexes(
-            records,
-            resources,
-            source_version,
-            prune_missing=prune_missing,
-        )
+    def _rebuild_streaming(
+        self,
+        org_codes: Sequence[str] = DEFAULT_ORG_CODES,
+        batch_size: int = 100,
+    ) -> Dict[str, int]:
+        """Rebuild index streaming through batches to minimize memory.
+
+        For each batch: fetch graphs → build records → serialize RDF → bulk write → release.
+        """
+        built_at = self.now
+        total_count = 0
+        seen_ids: set[uuid.UUID] = set()
+        batch_rows: List[ProjectIndex] = []
+        write_batch_size = 50  # Write to DB every N records
+
+        def _flush_batch():
+            nonlocal batch_rows
+            if not batch_rows:
+                return
+            ProjectIndex.objects.bulk_create(
+                batch_rows,
+                update_conflicts=True,
+                unique_fields=["project_resource"],
+                update_fields=[
+                    "uri", "org_code", "public_access_level", "is_public_approved",
+                    "is_derived", "title", "subtitle", "description", "image",
+                    "year_range", "institution_label", "institution_uri",
+                    "institution_codes", "project_type_label", "category_labels",
+                    "category_slugs", "actor_names", "year_values", "catchphrase_labels",
+                    "digital_object_paths", "categories", "actors", "events",
+                    "digital_objects", "alternative_titles", "catchphrases",
+                    "properties", "status", "authority", "submitter", "licenses",
+                    "rights_status", "record_jsonb", "canonical_rdf_xml",
+                    "institutional_rdf_xml", "dc_creators", "dc_contributors",
+                    "has_copyright_holder", "has_neighbouring_rights_holder",
+                    "reference_only", "harvestable", "ownership_filtered",
+                    "source_updated_at", "built_at", "source_version",
+                ],
+            )
+            batch_rows = []
+
+        for org_code in org_codes:
+            org_count = 0
+            # Collect a processing batch, then bulk fetch resources
+            processing_batch: List[Tuple[str, "ProjectGraphs"]] = []
+
+            for project_id, graphs in get_all_project_graphs_batched(org_code, batch_size=batch_size):
+                processing_batch.append((project_id, graphs))
+
+                # Process when we have enough
+                if len(processing_batch) >= write_batch_size:
+                    org_count += self._process_streaming_batch(
+                        processing_batch, built_at, batch_rows, seen_ids, _flush_batch
+                    )
+                    processing_batch = []
+
+            # Process remaining
+            if processing_batch:
+                org_count += self._process_streaming_batch(
+                    processing_batch, built_at, batch_rows, seen_ids, _flush_batch
+                )
+
+            # Flush remaining after each org
+            _flush_batch()
+            logger.info("Rebuilt %d indexes for org=%s", org_count, org_code)
+            total_count += org_count
+
+        # Prune missing
+        if seen_ids:
+            deleted, _ = ProjectIndex.objects.exclude(project_resource_id__in=seen_ids).delete()
+            if deleted:
+                logger.info("Pruned %d stale indexes", deleted)
+
+        logger.info("Streaming rebuild complete: %d total indexes", total_count)
+        return {"project_index": total_count}
+
+    def _process_streaming_batch(
+        self,
+        processing_batch: List[Tuple[str, "ProjectGraphs"]],
+        built_at,
+        batch_rows: List[ProjectIndex],
+        seen_ids: set,
+        flush_fn,
+    ) -> int:
+        """Process a batch: bulk fetch resources, build records/RDF, append to write batch."""
+        if not processing_batch:
+            return 0
+
+        # Bulk fetch resources
+        uuids = [_as_uuid(pid) for pid, _ in processing_batch]
+        valid_uuids = [u for u in uuids if u]
+        resource_map = Resource.objects.in_bulk(valid_uuids)
+
+        count = 0
+        for (project_id, graphs), subject_uuid in zip(processing_batch, uuids):
+            if not subject_uuid or subject_uuid not in resource_map:
+                continue
+
+            try:
+                resource = resource_map[subject_uuid]
+                record = graphs.to_project_record(project_id)
+
+                # Build OAI data (RDF serialization)
+                oai_data = _build_oai_from_graphs(graphs, resource, record)
+
+                # Build source version
+                updated = getattr(resource, "updated_at", None)
+                source_version = generate_value_hash(f"{resource.id}:{updated.isoformat() if updated else ''}")
+
+                # Build index row
+                defaults = self._unified_defaults(
+                    record, resource, built_at, source_version,
+                    precomputed_oai=oai_data,
+                )
+                batch_rows.append(ProjectIndex(project_resource=resource, **defaults))
+                seen_ids.add(resource.id)
+                count += 1
+
+                # Flush if write batch is full
+                if len(batch_rows) >= 50:
+                    flush_fn()
+
+            except Exception:
+                logger.exception("Failed to process project %s", project_id)
+
+        return count
 
     # ------------------------------------------------------------------ #
     # Internals                                                          #
@@ -280,6 +744,57 @@ class ProjectIndexDbService:
             else:
                 logger.warning("ProjectIndexDbService: record not found for uri=%s", normalized)
         return records
+
+    def _records_from_graph_service(
+        self,
+        org_codes: Sequence[str] = DEFAULT_ORG_CODES,
+        batch_size: int = 100,
+    ) -> Tuple[List[ProjectRecord], Dict[str, "ProjectGraphs"]]:
+        """Build ProjectRecord list using graph_service batched fetching.
+
+        More efficient than snapshot for large catalogs:
+        - 5 queries per batch vs 5 queries per project
+        - Controlled memory via batching
+        - Same data source as OAI RDF generation
+
+        Args:
+            org_codes: Organization codes to include
+            batch_size: Projects per batch (default 100)
+
+        Returns:
+            Tuple of (records, graphs_by_project_id)
+        """
+        from arkumu.projects.services.graph_service import ProjectGraphs
+
+        records: List[ProjectRecord] = []
+        graphs_map: Dict[str, ProjectGraphs] = {}
+
+        for org_code in org_codes:
+            org_count = 0
+            for project_id, graphs in get_all_project_graphs_batched(org_code, batch_size=batch_size):
+                try:
+                    record = graphs.to_project_record(project_id)
+                    records.append(record)
+                    graphs_map[project_id] = graphs
+                    org_count += 1
+                except Exception:
+                    logger.exception(
+                        "Failed to build ProjectRecord for project_id=%s org=%s",
+                        project_id,
+                        org_code,
+                    )
+
+            logger.info(
+                "ProjectIndexDbService: built %d records for org=%s via graph_service",
+                org_count,
+                org_code,
+            )
+
+        logger.info(
+            "ProjectIndexDbService: total %d records from graph_service",
+            len(records),
+        )
+        return records, graphs_map
 
     def _resource_map(self, records: Sequence[ProjectRecord]) -> Dict[uuid.UUID, Resource]:
         ids: List[uuid.UUID] = []
@@ -318,26 +833,55 @@ class ProjectIndexDbService:
         source_version: str,
         *,
         prune_missing: bool,
+        graphs_map: Optional[Dict[str, "ProjectGraphs"]] = None,
     ) -> Dict[str, int]:
         built_at = self.now
         seen_ids: set[uuid.UUID] = set()
         index_rows: List[ProjectIndex] = []
 
+        # Collect valid resource IDs and record dicts for batch pre-computation
+        valid_pairs: List[Tuple[ProjectRecord, uuid.UUID]] = []
         for record in records:
             subject_uuid = _as_uuid(getattr(record, "subject_id", None))
             if not subject_uuid:
                 logger.warning("ProjectIndexDbService: missing subject_id for uri=%s", record.uri)
                 continue
-            resource = resource_map.get(subject_uuid)
-            if not resource:
+            if subject_uuid not in resource_map:
                 logger.warning(
                     "ProjectIndexDbService: resource not found for subject_id=%s (uri=%s)",
                     subject_uuid,
                     record.uri,
                 )
                 continue
+            valid_pairs.append((record, subject_uuid))
 
-            defaults = self._unified_defaults(record, resource, built_at, source_version)
+        # Pre-compute OAI data: use graphs_map if available (no extra queries), else batch fetch
+        oai_cache: Dict[uuid.UUID, PrecomputedOaiData] = {}
+        if graphs_map:
+            # Use pre-fetched graphs - no additional DB queries needed
+            logger.info("Building OAI data from %d pre-fetched graphs...", len(valid_pairs))
+            for record, subject_uuid in valid_pairs:
+                graphs = graphs_map.get(str(subject_uuid))
+                if graphs:
+                    oai_cache[subject_uuid] = _build_oai_from_graphs(
+                        graphs, resource_map[subject_uuid], record
+                    )
+            logger.info("OAI data built from graphs complete.")
+        else:
+            # Fallback: batch fetch graphs via CanonicalGraphService
+            valid_resource_map = {rid: resource_map[rid] for _, rid in valid_pairs}
+            valid_record_map = {rid: record.to_dict() for record, rid in valid_pairs}
+            logger.info("Batch pre-computing OAI data for %d resources...", len(valid_pairs))
+            oai_cache = _batch_precompute_oai_data(valid_resource_map, valid_record_map)
+            logger.info("OAI data pre-computation complete.")
+
+        for record, subject_uuid in valid_pairs:
+            resource = resource_map[subject_uuid]
+            oai_data = oai_cache.get(subject_uuid)
+            defaults = self._unified_defaults(
+                record, resource, built_at, source_version,
+                precomputed_oai=oai_data,
+            )
             index_rows.append(ProjectIndex(project_resource=resource, **defaults))
             seen_ids.add(resource.id)
 
@@ -385,6 +929,12 @@ class ProjectIndexDbService:
                     "licenses",
                     "rights_status",
                     "record_jsonb",
+                    "canonical_rdf_xml",
+                    "institutional_rdf_xml",
+                    "dc_creators",
+                    "dc_contributors",
+                    "has_copyright_holder",
+                    "has_neighbouring_rights_holder",
                     "reference_only",
                     "harvestable",
                     "ownership_filtered",
@@ -392,6 +942,7 @@ class ProjectIndexDbService:
                     "built_at",
                     "source_version",
                 ],
+                batch_size=100,
             )
 
             if prune_missing and seen_ids:
@@ -405,6 +956,7 @@ class ProjectIndexDbService:
         resource: Resource,
         built_at,
         source_version: str,
+        precomputed_oai: Optional[PrecomputedOaiData] = None,
     ) -> Dict[str, object]:
         """Build defaults for the unified ProjectIndex model."""
         org_code = self._org_code(resource)
@@ -416,6 +968,9 @@ class ProjectIndexDbService:
         catchphrase_labels = [
             cp.label for cp in (record.catchphrases or []) if getattr(cp, "label", None)
         ]
+
+        # Extract DC metadata from record (fallback when precomputed_oai is None)
+        dc_from_record = _extract_dc_metadata_from_record(record) if not precomputed_oai else None
 
         # Build structured data for detail views
         categories_structured = [
@@ -491,6 +1046,14 @@ class ProjectIndexDbService:
             "rights_status": {},
             # Full record JSON
             "record_jsonb": record.to_dict(),
+            # Pre-computed OAI-PMH data
+            "canonical_rdf_xml": precomputed_oai.canonical_rdf_xml if precomputed_oai else _serialize_canonical_rdf_xml(resource),
+            "institutional_rdf_xml": precomputed_oai.institutional_rdf_xml if precomputed_oai else _serialize_institutional_rdf_xml(resource),
+            # DC metadata: use precomputed or extract from record (no extra queries)
+            "dc_creators": precomputed_oai.dc_creators if precomputed_oai else dc_from_record.creators,
+            "dc_contributors": precomputed_oai.dc_contributors if precomputed_oai else dc_from_record.contributors,
+            "has_copyright_holder": self._has_copyright_holder(record, precomputed_oai),
+            "has_neighbouring_rights_holder": self._has_neighbouring_rights_holder(record, precomputed_oai),
             # Flags
             "reference_only": bool(getattr(record, "reference_only", False)),
             "harvestable": bool(getattr(record, "harvestable", True)),
@@ -512,6 +1075,24 @@ class ProjectIndexDbService:
         institution = getattr(record, "institution", None)
         label = getattr(institution, "label", "") if institution else ""
         return str(label or "").strip()
+
+    @staticmethod
+    def _has_copyright_holder(record: ProjectRecord, precomputed_oai: Optional[PrecomputedOaiData]) -> bool:
+        """Check if any event actor is a copyright holder."""
+        for event in (record.events or []):
+            for actor in (getattr(event, "actors", []) or []):
+                if getattr(actor, "is_copyright_holder", False):
+                    return True
+        return False
+
+    @staticmethod
+    def _has_neighbouring_rights_holder(record: ProjectRecord, precomputed_oai: Optional[PrecomputedOaiData]) -> bool:
+        """Check if any event actor is a neighbouring rights holder."""
+        for event in (record.events or []):
+            for actor in (getattr(event, "actors", []) or []):
+                if getattr(actor, "is_neighbouring_rights_holder", False):
+                    return True
+        return False
 
     def _category_tokens(self, record: ProjectRecord) -> List[str]:
         tokens: List[str] = []
@@ -593,6 +1174,7 @@ class ProjectIndexDbService:
         self,
         *,
         project_uris: Optional[Sequence[str]] = None,
+        skip_rdf: bool = False,
     ) -> Dict[str, int]:
         """Rebuild index tables directly from the canonical graph.
 
@@ -601,16 +1183,18 @@ class ProjectIndexDbService:
         """
         from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 
+        logger.info("rebuild_from_graph: loading project graph from triple store...")
         graph_service = CanonicalGraphService(org_code=None)
         graph = graph_service.get_project_graph(
             dataset_name="Projekt",
             type_canonical_uri=_CanonicalURIs.PROJECT_TYPE,
-            predicate_canon_whitelist=_CanonicalURIs.project_predicates(),
+            predicate_canon_whitelist=None,  # No whitelist - fetch ALL predicates for RDF
             expand_neighbors=True,
-            neighbor_predicate_canon_whitelist=_CanonicalURIs.neighbor_predicates(),
+            neighbor_predicate_canon_whitelist=None,  # No whitelist for neighbors
         )
 
         subject_ids: List[str] = graph.get("subjects", []) or []
+        logger.info("rebuild_from_graph: loaded %d projects from graph", len(subject_ids))
         if not subject_ids:
             logger.warning("rebuild_from_graph: no project subjects found")
             return {"project_index": 0}
@@ -633,28 +1217,40 @@ class ProjectIndexDbService:
         # FUK uses direct event->actor links, so we need to also fetch actor properties
         self._expand_second_level_actors(edges_by_subject, nodes, graph_service)
 
+        # Pre-build CV label lookup for event types (ereignistyp)
+        self._event_type_labels = self._build_cv_label_cache("ereignistyp")
+
         # Discover junction entities for FUK/KHM data models (batch pre-fetch)
+        logger.info("rebuild_from_graph: expanding junction entities...")
         project_subject_id_set = set(str(sid) for sid in subject_ids)
         self._expand_event_junctions(edges_by_subject, nodes, project_subject_id_set)
+        logger.info("rebuild_from_graph: junction expansion complete")
 
         # Build reverse indexes for O(1) junction lookup
+        # Covers FUK (im-ereignis), KHM (projekt), HMT (ereignis)
         self._junctions_by_event: Dict[str, List[str]] = {}
         self._junctions_by_project: Dict[str, List[str]] = {}
+        HMT_EREIGNIS = "http://arkumu.org/data/properties/ereignis"
         for subj_id, subj_edges in edges_by_subject.items():
             for edge in subj_edges:
                 pred = self._canonical(edge)
                 obj_id = edge.get("object_id")
                 if pred == _CanonicalURIs.JUNCTION_TO_EVENT and obj_id:
+                    # FUK pattern: junction -> im-ereignis -> event
                     self._junctions_by_event.setdefault(obj_id, []).append(subj_id)
                 elif pred == _CanonicalURIs.JUNCTION_TO_PROJECT and obj_id:
+                    # KHM pattern: junction -> projekt -> project
                     self._junctions_by_project.setdefault(obj_id, []).append(subj_id)
+                elif pred == HMT_EREIGNIS and obj_id:
+                    # HMT pattern: junction -> ereignis -> event
+                    self._junctions_by_event.setdefault(obj_id, []).append(subj_id)
 
         # PRE-COMPUTE all fields for all projects in ONE pass
-        logger.debug("rebuild_from_graph: pre-computing all fields for %d projects", len(subject_ids))
+        logger.info("rebuild_from_graph: pre-computing all fields for %d projects", len(subject_ids))
         self._project_cache = self._batch_precompute_all_fields(
             subject_ids, edges_by_subject, nodes
         )
-        logger.debug("rebuild_from_graph: all fields pre-computed for %d projects", len(self._project_cache))
+        logger.info("rebuild_from_graph: all fields pre-computed for %d projects", len(self._project_cache))
 
         # Batch-fetch Resources for visibility and org info
         resource_map = self._fetch_resources_batch(subject_ids)
@@ -672,6 +1268,8 @@ class ProjectIndexDbService:
             built_at=built_at,
             source_version=source_version,
             prune_missing=prune_missing,
+            graph_service=graph_service,
+            skip_rdf=skip_rdf,
         )
 
     def _build_edge_index(
@@ -710,6 +1308,8 @@ class ProjectIndexDbService:
         built_at,
         source_version: str,
         prune_missing: bool,
+        graph_service: CanonicalGraphService,
+        skip_rdf: bool = False,
     ) -> Dict[str, int]:
         """Transform graph data into unified ProjectIndex rows."""
         seen_ids: Set[uuid.UUID] = set()
@@ -718,7 +1318,7 @@ class ProjectIndexDbService:
 
         for idx, subject_id in enumerate(subject_ids):
             if idx % 500 == 0:
-                logger.debug("_write_indexes_from_graph: processing %d/%d", idx, total)
+                logger.info("rebuild_from_graph: processing %d/%d projects", idx, total)
             subject_uuid = _as_uuid(subject_id)
             if not subject_uuid:
                 continue
@@ -786,6 +1386,10 @@ class ProjectIndexDbService:
                 institution_codes=institution_codes,
             )
 
+            # RDF precomputed below after collecting all project IDs
+            canonical_rdf_xml = ""
+            institutional_rdf_xml = ""
+
             # Build unified ProjectIndex row
             index_row = ProjectIndex(
                 project_resource=resource,
@@ -828,6 +1432,9 @@ class ProjectIndexDbService:
                 rights_status={},
                 # Full record JSON
                 record_jsonb=record_jsonb,
+                # Pre-computed RDF/XML for fast METS generation
+                canonical_rdf_xml=canonical_rdf_xml,
+                institutional_rdf_xml=institutional_rdf_xml,
                 # Flags
                 reference_only=False,
                 harvestable=True,
@@ -840,7 +1447,51 @@ class ProjectIndexDbService:
             index_rows.append(index_row)
             seen_ids.add(resource.id)
 
+        # Batch generate RDF/XML for all projects (unless skipped)
+        # NOTE: We use the SAME graph_data (from _build_project_graph_for_rdf) for both
+        # canonical and institutional RDF. Each edge has both predicate_canonical and
+        # predicate_uri fields - canonical RDF uses the former, institutional uses latter.
+        if index_rows and not skip_rdf:
+            import time as _time
+            total_rows = len(index_rows)
+            logger.info("Batch generating RDF/XML for %d projects...", total_rows)
+            t0 = _time.perf_counter()
+
+            for idx, row in enumerate(index_rows):
+                if idx % 500 == 0:
+                    logger.info("RDF serialization progress: %d/%d (%.1f%%)", idx, total_rows, 100.0 * idx / total_rows)
+                rid = str(row.project_resource_id)
+                graph_data = self._build_project_graph_for_rdf(rid, edges_by_subject, nodes)
+                if graph_data and graph_data.get("edges"):
+                    row.canonical_rdf_xml = _serialize_canonical_rdf_xml(row.project_resource, graph_data=graph_data)
+                    # Use same graph_data for institutional RDF (uses predicate_uri instead of predicate_canonical)
+                    org_code = self._org_code(row.project_resource)
+                    row.institutional_rdf_xml = _serialize_institutional_rdf_xml(
+                        row.project_resource,
+                        graph_data=graph_data,
+                        org_code=org_code or "",
+                    )
+            t1 = _time.perf_counter()
+            logger.info("RDF/XML generation complete in %.2fs (%.3fs per project)", t1 - t0, (t1 - t0) / total_rows)
+        elif skip_rdf:
+            logger.info("Skipping RDF/XML generation (--skip-rdf flag)")
+
+        # Populate dc_creators/dc_contributors from already-loaded graph data
+        # (no additional database queries - reuses edges_by_subject from _expand_event_junctions)
+        if index_rows:
+            logger.info("Extracting DC creators/contributors from graph data...")
+            dc_count = 0
+            for row in index_rows:
+                project_id = str(row.project_resource_id)
+                dc_data = self._extract_dc_from_graph(project_id, edges_by_subject, nodes)
+                row.dc_creators = dc_data.get("creators", [])
+                row.dc_contributors = dc_data.get("contributors", [])
+                if row.dc_creators or row.dc_contributors:
+                    dc_count += 1
+            logger.info("DC creators/contributors populated for %d projects", dc_count)
+
         # Bulk write
+        logger.info("rebuild_from_graph: writing %d index rows to database...", len(index_rows))
         with transaction.atomic():
             if not index_rows:
                 if prune_missing:
@@ -885,6 +1536,12 @@ class ProjectIndexDbService:
                     "licenses",
                     "rights_status",
                     "record_jsonb",
+                    "canonical_rdf_xml",
+                    "institutional_rdf_xml",
+                    "dc_creators",
+                    "dc_contributors",
+                    "has_copyright_holder",
+                    "has_neighbouring_rights_holder",
                     "reference_only",
                     "harvestable",
                     "ownership_filtered",
@@ -892,6 +1549,7 @@ class ProjectIndexDbService:
                     "built_at",
                     "source_version",
                 ],
+                batch_size=100,
             )
 
             if prune_missing and seen_ids:
@@ -975,6 +1633,55 @@ class ProjectIndexDbService:
                         roles.append(role_name)
 
         return roles
+
+    def _build_cv_label_cache(self, cv_type: str) -> Dict[str, str]:
+        """Build lookup dict: CV entity ID (str) -> German label.
+
+        Used for resolving CV entity references to human-readable labels.
+        """
+        from arkumu.metadata.models import Triple, Resource, ResourceType
+
+        # CV label predicates by type
+        label_predicates = {
+            "ereignistyp": _CanonicalURIs.EVENT_TYPE_NAME,
+            "projektkategorie": _CanonicalURIs.CATEGORY_NAME,
+            "projektart": _CanonicalURIs.PROJECT_TYPE_NAME,
+            "rolle": _CanonicalURIs.ROLE_GERMAN_NAME,
+        }
+        label_pred = label_predicates.get(cv_type)
+        if not label_pred:
+            return {}
+
+        # CV class URI pattern
+        cv_prefix = f"http://arkumu.org/data/types/{cv_type}/"
+
+        # Find all CV entities
+        cv_entities = Resource.objects.filter(
+            uri__startswith=cv_prefix,
+            resource_type=ResourceType.ENTITY,
+        ).values_list("id", "uri", "name")
+
+        # Batch-fetch labels
+        entity_ids = [e[0] for e in cv_entities]
+        label_triples = Triple.objects.filter(
+            subject_id__in=entity_ids,
+            predicate__canonical_uri=label_pred,
+        ).values_list("subject_id", "object__value")
+
+        # Build lookup
+        label_by_id: Dict[str, str] = {}
+        for subj_id, label in label_triples:
+            if label:
+                label_by_id[str(subj_id)] = label
+
+        # Fallback to entity name for any missing
+        for eid, uri, name in cv_entities:
+            sid = str(eid)
+            if sid not in label_by_id and name:
+                label_by_id[sid] = name
+
+        logger.debug("_build_cv_label_cache: built %d labels for %s", len(label_by_id), cv_type)
+        return label_by_id
 
     def _expand_second_level_actors(
         self,
@@ -1074,13 +1781,16 @@ class ProjectIndexDbService:
     ) -> None:
         """Discover and expand junction entities that link TO events or projects.
 
-        Supports two patterns:
-        1. FUK: Junction -> im-ereignis -> Event (akteurin-ereignis-kreuztabelle)
+        Supports three patterns:
+        1. FUK/RSH/DET: Junction -> im-ereignis -> Event (akteurin-ereignis-kreuztabelle)
         2. KHM: Junction -> projekt -> Project (kreuz-projekte-personen)
+        3. HMT: Junction -> ereignis -> Event (03-hfm-kreuz-ereignis-akteure)
 
-        Both patterns have:
+        All patterns have:
         - Junction -> akteurin-im-ereignis -> Actor
         - Junction -> rollen-der-akteurin-im-ereignis -> Rolle (or literal)
+        - Junction -> ist-urheberin -> 0/1 (copyright holder flag)
+        - Junction -> besitzt-leistungsschutzrechte -> 0/1 (neighbouring rights flag)
 
         This method queries the database to find junctions and adds their edges.
         """
@@ -1110,11 +1820,19 @@ class ProjectIndexDbService:
             for t in junction_triples:
                 junction_id = str(t.subject_id)
                 junction_ids.add(junction_id)
+                # Add junction node to nodes dict immediately
+                if junction_id not in nodes:
+                    nodes[junction_id] = {
+                        "uri": t.subject.uri if t.subject else None,
+                        "resource_type": ResourceType.ENTITY.value,
+                    }
                 # Add the im-ereignis edge to the graph
                 edges_by_subject.setdefault(junction_id, []).append({
                     "subject_id": junction_id,
                     "predicate_canonical": _CanonicalURIs.JUNCTION_TO_EVENT,
+                    "predicate_uri": t.predicate.uri if t.predicate else None,
                     "object_id": str(t.object_id) if t.object_id else None,
+                    "object_uri": t.object.uri if t.object else None,
                 })
 
         # Pattern 2: KHM - junctions that link TO projects via projekt
@@ -1129,11 +1847,45 @@ class ProjectIndexDbService:
             for t in project_junction_triples:
                 junction_id = str(t.subject_id)
                 junction_ids.add(junction_id)
+                # Add junction node to nodes dict immediately
+                if junction_id not in nodes:
+                    nodes[junction_id] = {
+                        "uri": t.subject.uri if t.subject else None,
+                        "resource_type": ResourceType.ENTITY.value,
+                    }
                 # Add the projekt edge to the graph
                 edges_by_subject.setdefault(junction_id, []).append({
                     "subject_id": junction_id,
                     "predicate_canonical": _CanonicalURIs.JUNCTION_TO_PROJECT,
+                    "predicate_uri": t.predicate.uri if t.predicate else None,
                     "object_id": str(t.object_id) if t.object_id else None,
+                    "object_uri": t.object.uri if t.object else None,
+                })
+
+        # Pattern 3: HMT - junctions that link TO events via ereignis (not im-ereignis)
+        # HMT uses 03-hfm-kreuz-ereignis-akteure -> ereignis -> 02-hfm-ereignis
+        if event_ids:
+            CANONICAL_EREIGNIS = "http://arkumu.org/data/properties/ereignis"
+            hmt_junction_triples = Triple.objects.filter(
+                predicate__canonical_uri=CANONICAL_EREIGNIS,
+                object_id__in=[_as_uuid(eid) for eid in event_ids if _as_uuid(eid)],
+                subject__organization__code="hmt",
+            ).select_related("subject", "predicate", "object")
+
+            for t in hmt_junction_triples:
+                junction_id = str(t.subject_id)
+                junction_ids.add(junction_id)
+                if junction_id not in nodes:
+                    nodes[junction_id] = {
+                        "uri": t.subject.uri if t.subject else None,
+                        "resource_type": ResourceType.ENTITY.value,
+                    }
+                edges_by_subject.setdefault(junction_id, []).append({
+                    "subject_id": junction_id,
+                    "predicate_canonical": CANONICAL_EREIGNIS,
+                    "predicate_uri": t.predicate.uri if t.predicate else None,
+                    "object_id": str(t.object_id) if t.object_id else None,
+                    "object_uri": t.object.uri if t.object else None,
                 })
 
         if not junction_ids:
@@ -1142,13 +1894,10 @@ class ProjectIndexDbService:
 
         logger.debug("_expand_event_junctions: found %d junctions", len(junction_ids))
 
-        # Fetch junction edges: actor links and role links
+        # Fetch ALL junction edges (actor links, role links, and properties like ist-urheberin)
+        # This is needed for RDF serialization to include junction properties
         junction_edge_triples = Triple.objects.filter(
             subject_id__in=[_as_uuid(jid) for jid in junction_ids if _as_uuid(jid)],
-            predicate__canonical_uri__in=[
-                _CanonicalURIs.ACTOR_LINK,
-                _CanonicalURIs.ACTOR_ROLE,
-            ],
         ).select_related("predicate", "object")
 
         rolle_ids: Set[str] = set()
@@ -1156,7 +1905,8 @@ class ProjectIndexDbService:
 
         for t in junction_edge_triples:
             junction_id = str(t.subject_id)
-            pred_canonical = t.predicate.canonical_uri
+            pred_canonical = t.predicate.canonical_uri or ""
+            pred_uri = t.predicate.uri or ""
 
             # Check if object is a literal (KHM pattern) or entity (FUK pattern)
             # For literals, object.resource_type == 'LITERAL' and value is in object.value
@@ -1166,10 +1916,33 @@ class ProjectIndexDbService:
             edge_dict = {
                 "subject_id": junction_id,
                 "predicate_canonical": pred_canonical,
-                "object_id": str(t.object_id) if t.object_id and not is_literal else None,
+                "predicate_uri": pred_uri,
+                "object_id": str(t.object_id) if t.object_id else None,  # Include for literals too
                 "object_value": object_value,
+                "object_uri": t.object.uri if t.object else None,
             }
             edges_by_subject.setdefault(junction_id, []).append(edge_dict)
+
+            # Add junction node to nodes dict (needed for RDF serialization)
+            if junction_id not in nodes:
+                nodes[junction_id] = {
+                    "uri": t.subject.uri if t.subject else None,
+                    "resource_type": ResourceType.ENTITY.value,
+                }
+
+            # Add object node to nodes dict
+            obj_id = str(t.object_id) if t.object_id else None
+            if obj_id and obj_id not in nodes:
+                if is_literal:
+                    nodes[obj_id] = {
+                        "value": object_value,
+                        "resource_type": ResourceType.LITERAL.value,
+                    }
+                else:
+                    nodes[obj_id] = {
+                        "uri": t.object.uri if t.object else None,
+                        "resource_type": ResourceType.ENTITY.value,
+                    }
 
             # Collect rolle and actor IDs for further expansion (only for entity links)
             if pred_canonical == _CanonicalURIs.ACTOR_ROLE and t.object_id and not is_literal:
@@ -1186,11 +1959,24 @@ class ProjectIndexDbService:
 
             for t in rolle_name_triples:
                 rolle_id = str(t.subject_id)
+                obj_id = str(t.object_id) if t.object_id else None
+                obj_value = t.object.value if t.object else None
                 edges_by_subject.setdefault(rolle_id, []).append({
                     "subject_id": rolle_id,
                     "predicate_canonical": _CanonicalURIs.ROLE_GERMAN_NAME,
-                    "object_value": t.object.value if t.object else None,
+                    "predicate_uri": t.predicate.uri if t.predicate else None,
+                    "object_id": obj_id,
+                    "object_value": obj_value,
                 })
+                # Add literal node for role name
+                if obj_id and obj_id not in nodes:
+                    nodes[obj_id] = {
+                        "value": obj_value,
+                        "resource_type": ResourceType.LITERAL.value,
+                    }
+                # Ensure rolle node has resource_type
+                if rolle_id in nodes and "resource_type" not in nodes[rolle_id]:
+                    nodes[rolle_id]["resource_type"] = ResourceType.ENTITY.value
 
         # Fetch actor name edges (for actors found via junctions)
         if actor_ids:
@@ -1201,13 +1987,26 @@ class ProjectIndexDbService:
 
             for t in actor_name_triples:
                 actor_id = str(t.subject_id)
+                obj_id = str(t.object_id) if t.object_id else None
+                obj_value = t.object.value if t.object else None
                 edges_by_subject.setdefault(actor_id, []).append({
                     "subject_id": actor_id,
                     "predicate_canonical": _CanonicalURIs.ACTOR_NAME,
-                    "object_value": t.object.value if t.object else None,
+                    "predicate_uri": t.predicate.uri if t.predicate else None,
+                    "object_id": obj_id,
+                    "object_value": obj_value,
                 })
-                # Also add to nodes
-                nodes.setdefault(actor_id, {})["uri"] = t.subject.uri if t.subject else ""
+                # Add literal node for actor name
+                if obj_id and obj_id not in nodes:
+                    nodes[obj_id] = {
+                        "value": obj_value,
+                        "resource_type": ResourceType.LITERAL.value,
+                    }
+                # Add/update actor node with uri and resource_type
+                if actor_id not in nodes:
+                    nodes[actor_id] = {}
+                nodes[actor_id]["uri"] = t.subject.uri if t.subject else ""
+                nodes[actor_id]["resource_type"] = ResourceType.ENTITY.value
 
         logger.debug(
             "_expand_event_junctions: added %d junction edges, %d rolle edges, %d actor edges",
@@ -1245,6 +2044,7 @@ class ProjectIndexDbService:
                 "subtitle": None,
                 "description": None,
                 "image": None,
+                "image_entity_id": None,  # For vorschaubild → digital object lookup
                 "institution_id": None,
                 "institution_label": "",
                 "institution_uri": "",
@@ -1286,7 +2086,12 @@ class ProjectIndexDbService:
                 elif pred == _CanonicalURIs.EVENT_DESCRIPTION and not proj["description"]:
                     proj["description"] = obj_val
                 elif pred == _CanonicalURIs.IMAGE and not proj["image"]:
-                    proj["image"] = obj_val
+                    if obj_val:
+                        # Normalize path: backslashes → forward slashes, spaces → underscores
+                        proj["image"] = obj_val.replace("\\", "/").replace(" ", "_")
+                    elif obj_id:
+                        # vorschaubild points to entity (digital object) - resolve later
+                        proj["image_entity_id"] = obj_id
                 elif pred == _CanonicalURIs.INSTITUTION and obj_id:
                     proj["institution_id"] = obj_id
                 elif pred == _CanonicalURIs.CATEGORY and obj_id:
@@ -1324,6 +2129,16 @@ class ProjectIndexDbService:
                     proj["institution_label"] = inst_node.get("name") or inst_node.get("value") or ""
                 inst_node = nodes.get(proj["institution_id"], {})
                 proj["institution_uri"] = inst_node.get("uri") or ""
+
+            # Image path from vorschaubild entity (digital object → dateipfad)
+            if not proj["image"] and proj["image_entity_id"]:
+                img_edges = edges_by_subject.get(proj["image_entity_id"], [])
+                for e in img_edges:
+                    if self._canonical(e) == _CanonicalURIs.DO_PATH:
+                        raw_path = e.get("object_value") or ""
+                        # Normalize path: backslashes → forward slashes, spaces → underscores
+                        proj["image"] = raw_path.replace("\\", "/").replace(" ", "_")
+                        break
 
             # Categories
             seen_cats = set()
@@ -1403,6 +2218,8 @@ class ProjectIndexDbService:
                 start = None
                 end = None
                 location = None
+                event_type_id = None
+                event_type_label = None
                 for e in event_edges:
                     p = self._canonical(e)
                     if p == _CanonicalURIs.EVENT_NAME:
@@ -1415,8 +2232,20 @@ class ProjectIndexDbService:
                         end = e.get("object_value")
                     elif p == _CanonicalURIs.EVENT_LOCATION:
                         location = e.get("object_value")
+                    elif p == _CanonicalURIs.EVENT_TYPE:
+                        # May be literal (legacy) or entity reference (CV)
+                        event_type_label = e.get("object_value")
+                        event_type_id = e.get("object_id")
                 if not event_name:
                     event_name = event_node.get("name") or event_node.get("value") or ""
+                # Resolve event type label from CV entity if needed
+                if not event_type_label and event_type_id:
+                    # Use pre-built CV label cache
+                    event_type_label = self._event_type_labels.get(event_type_id, "")
+                    if not event_type_label:
+                        # Fallback to node data
+                        et_node = nodes.get(event_type_id, {})
+                        event_type_label = et_node.get("name") or et_node.get("value") or ""
                 # Extract years
                 for val in (start, end):
                     year = _coerce_year(val)
@@ -1431,6 +2260,7 @@ class ProjectIndexDbService:
                     "id": event_id,
                     "uri": event_node.get("uri") or "",
                     "name": event_name,
+                    "type": event_type_label or "",
                     "start": start,
                     "end": end,
                     "location": location,
@@ -1479,7 +2309,7 @@ class ProjectIndexDbService:
             actor_node = nodes.get(actor_id, {})
             return name or "", actor_node.get("uri") or ""
 
-        def add_actor(proj: Dict, name: str, uri: str, roles: List[str]) -> None:
+        def add_actor(proj: Dict, name: str, uri: str, roles: List[str], event_id: str = None) -> None:
             if not name:
                 return
             normalized = str(name).strip()
@@ -1494,6 +2324,20 @@ class ProjectIndexDbService:
                 }
             else:
                 proj["actors_structured"][normalized]["roles"].update(roles)
+            # Also add to event-level actors if event_id provided
+            if event_id:
+                for evt in proj["events_structured"]:
+                    if evt.get("id") == event_id:
+                        # Check if actor already in event
+                        existing = next((a for a in evt["actors"] if a.get("name") == normalized), None)
+                        if not existing:
+                            evt["actors"].append({"name": normalized, "roles": list(roles), "uri": uri})
+                        else:
+                            # Merge roles
+                            for r in roles:
+                                if r not in existing["roles"]:
+                                    existing["roles"].append(r)
+                        break
 
         # Process junctions via events (FUK pattern)
         for event_id, project_ids in event_to_projects.items():
@@ -1510,7 +2354,7 @@ class ProjectIndexDbService:
                     name, uri = get_actor_info(actor_id)
                     for pid in project_ids:
                         if pid in result:
-                            add_actor(result[pid], name, uri, roles)
+                            add_actor(result[pid], name, uri, roles, event_id=event_id)
 
             # Direct event->actor links
             for direct_pred in (_CanonicalURIs.EVENT_DIRECT_ACTOR_FUK, _CanonicalURIs.EVENT_DIRECT_ACTOR_KHM):
@@ -1519,7 +2363,7 @@ class ProjectIndexDbService:
                     name, uri = get_actor_info(actor_id)
                     for pid in project_ids:
                         if pid in result:
-                            add_actor(result[pid], name, uri, [])
+                            add_actor(result[pid], name, uri, [], event_id=event_id)
 
         # Process junctions via projects (KHM pattern)
         for project_id, junction_ids in self._junctions_by_project.items():
@@ -1951,6 +2795,192 @@ class ProjectIndexDbService:
             "alternative_titles": [],
             "category_slugs": category_slugs,
         }
+
+    # ------------------------------------------------------------------ #
+    # RDF graph builder for precomputed RDF/XML                           #
+    # ------------------------------------------------------------------ #
+
+    def _build_project_graph_for_rdf(
+        self,
+        project_id: str,
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        nodes: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Build complete graph data for a project including junctions.
+
+        Traverses the project's subgraph to collect ALL edges:
+        - Project edges (project -> ereignis, etc.)
+        - Event edges (ereignis -> akteurin, properties)
+        - Junction edges (junction -> akteurin, im-ereignis, ist-urheberin, etc.)
+        - Actor edges (akteurin properties)
+
+        Returns graph_data dict suitable for build_rdf_graph().
+        """
+        collected_edges: List[Dict[str, Any]] = []
+        visited_subjects: set[str] = set()
+
+        def collect_from_subject(subject_id: str) -> None:
+            if subject_id in visited_subjects:
+                return
+            visited_subjects.add(subject_id)
+            edges = edges_by_subject.get(subject_id, [])
+            collected_edges.extend(edges)
+
+        # 1. Collect project edges
+        collect_from_subject(project_id)
+        project_edges = edges_by_subject.get(project_id, [])
+
+        # 2. Find events linked from this project and collect their edges
+        event_ids: List[str] = []
+        for edge in project_edges:
+            pred = self._canonical(edge)
+            obj_id = edge.get("object_id")
+            if pred == _CanonicalURIs.EVENT and obj_id:
+                event_ids.append(obj_id)
+                collect_from_subject(obj_id)
+
+        # 3. Collect junction edges via events
+        for event_id in event_ids:
+            # Junctions pointing TO this event
+            junction_ids = self._junctions_by_event.get(event_id, [])
+            for junction_id in junction_ids:
+                collect_from_subject(junction_id)
+                # Collect actor edges from junction
+                junction_edges = edges_by_subject.get(junction_id, [])
+                for jedge in junction_edges:
+                    jpred = self._canonical(jedge)
+                    jobj = jedge.get("object_id")
+                    if jpred == _CanonicalURIs.ACTOR_LINK and jobj:
+                        collect_from_subject(jobj)
+
+            # Forward junctions (EVENT_ACTOR_JUNCTION)
+            event_edges = edges_by_subject.get(event_id, [])
+            for edge in event_edges:
+                pred = self._canonical(edge)
+                obj_id = edge.get("object_id")
+                if pred == _CanonicalURIs.EVENT_ACTOR_JUNCTION and obj_id:
+                    collect_from_subject(obj_id)
+                    junction_edges = edges_by_subject.get(obj_id, [])
+                    for jedge in junction_edges:
+                        jpred = self._canonical(jedge)
+                        jobj = jedge.get("object_id")
+                        if jpred == _CanonicalURIs.ACTOR_LINK and jobj:
+                            collect_from_subject(jobj)
+
+        # 4. Collect junctions linked directly to project (KHM pattern)
+        direct_junction_ids = self._junctions_by_project.get(project_id, [])
+        for junction_id in direct_junction_ids:
+            collect_from_subject(junction_id)
+            junction_edges = edges_by_subject.get(junction_id, [])
+            for jedge in junction_edges:
+                jpred = self._canonical(jedge)
+                jobj = jedge.get("object_id")
+                if jpred == _CanonicalURIs.ACTOR_LINK and jobj:
+                    collect_from_subject(jobj)
+
+        return {
+            "root_id": project_id,
+            "nodes": nodes,  # Full nodes dict (filtering happens in build_rdf_graph)
+            "edges": collected_edges,
+        }
+
+    def _extract_dc_from_graph(
+        self,
+        project_id: str,
+        edges_by_subject: Dict[str, List[Dict[str, Any]]],
+        nodes: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, List[str]]:
+        """Extract dc:creator and dc:contributor from already-loaded graph data.
+
+        Uses the junction data in edges_by_subject (populated by _expand_event_junctions)
+        to extract creators/contributors without additional database queries.
+
+        Logic:
+        - is_copyright_holder=True OR is_neighbouring_rights_holder=True -> creator
+        - Otherwise -> contributor
+
+        Returns:
+            Dict with 'creators' and 'contributors' lists.
+        """
+        creators: List[str] = []
+        contributors: List[str] = []
+        seen_creators: Set[str] = set()
+        seen_contributors: Set[str] = set()
+
+        def _is_truthy(value: Any) -> bool:
+            if value is None:
+                return False
+            token = str(value).strip().lower()
+            return token in {"1", "true", "yes", "ja"}
+
+        def _get_actor_name(actor_id: str) -> Optional[str]:
+            """Get actor name from edges or nodes."""
+            actor_edges = edges_by_subject.get(actor_id, [])
+            for edge in actor_edges:
+                pred = self._canonical(edge)
+                if pred == _CanonicalURIs.ACTOR_NAME:
+                    val = edge.get("object_value")
+                    if val:
+                        return str(val).strip()
+            # Fallback to node name
+            actor_node = nodes.get(actor_id, {})
+            return actor_node.get("name") or actor_node.get("value")
+
+        # Find events for this project
+        project_edges = edges_by_subject.get(project_id, [])
+        event_ids: List[str] = []
+        for edge in project_edges:
+            pred = self._canonical(edge)
+            if pred == _CanonicalURIs.EVENT:
+                event_id = edge.get("object_id")
+                if event_id:
+                    event_ids.append(event_id)
+
+        # Collect junction IDs from events (FUK/HMT) and project (KHM)
+        junction_ids: Set[str] = set()
+        for event_id in event_ids:
+            junction_ids.update(self._junctions_by_event.get(event_id, []))
+        junction_ids.update(self._junctions_by_project.get(project_id, []))
+
+        # Process each junction
+        for junction_id in junction_ids:
+            junction_edges = edges_by_subject.get(junction_id, [])
+
+            actor_id: Optional[str] = None
+            is_copyright_holder = False
+            is_neighbouring_rights_holder = False
+
+            for edge in junction_edges:
+                pred_canonical = self._canonical(edge)
+                pred_uri = edge.get("predicate_uri") or ""
+
+                if pred_canonical == _CanonicalURIs.ACTOR_LINK:
+                    actor_id = edge.get("object_id")
+
+                elif pred_canonical == _CanonicalURIs.IST_URHEBERIN or "ist-urheberin" in pred_uri:
+                    is_copyright_holder = _is_truthy(edge.get("object_value"))
+
+                elif pred_canonical == _CanonicalURIs.LEISTUNGSSCHUTZRECHTE or "leistungsschutzrechte" in pred_uri:
+                    is_neighbouring_rights_holder = _is_truthy(edge.get("object_value"))
+
+            if not actor_id:
+                continue
+
+            name = _get_actor_name(actor_id)
+            if not name:
+                continue
+
+            is_creator = is_copyright_holder or is_neighbouring_rights_holder
+            if is_creator:
+                if name not in seen_creators:
+                    seen_creators.add(name)
+                    creators.append(name)
+            else:
+                if name not in seen_contributors:
+                    seen_contributors.add(name)
+                    contributors.append(name)
+
+        return {"creators": creators, "contributors": contributors}
 
     # ------------------------------------------------------------------ #
     # Structured data extractors for ProjectDetailIndex                   #

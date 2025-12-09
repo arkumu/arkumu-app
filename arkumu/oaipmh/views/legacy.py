@@ -1459,11 +1459,11 @@ def _get_resources_queryset(
         queryset = (
             Resource.objects.filter(uri__in=uris)
             .filter(access_clause)
-            .select_related('organization')
+            .select_related('organization', 'project_index')
             .order_by('updated_at', 'id')
         )
     else:
-        queryset = Resource.objects.filter(access_clause).select_related('organization')
+        queryset = Resource.objects.filter(access_clause).select_related('organization', 'project_index')
         if project_type_clause is not None:
             queryset = queryset.filter(project_type_clause).distinct()
         else:
@@ -2837,9 +2837,7 @@ def _build_mets_from_project(
                 general_keys.append(("label", label_value))
             if obj.file_name:
                 general_keys.append(("fileOriginalName", obj.file_name))
-            storage_path = _original_storage_path(obj)
-            if storage_path:
-                general_keys.append(("fileOriginalPath", storage_path))
+            # fileOriginalPath removed per Rosetta requirements (Issue #4)
             if obj.content_type:
                 general_keys.append(("fileMIMEType", obj.content_type))
             if obj.size_bytes is not None:
@@ -3926,7 +3924,7 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
             resource_qs = (
                 Resource.objects.filter(uri=resource_uri)
                 .filter(access_clause)
-                .select_related("organization")
+                .select_related("organization", "project_index")
             )
             if project_type_clause is not None:
                 resource_qs = resource_qs.filter(project_type_clause).distinct()
@@ -3957,7 +3955,7 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
                 fallback_qs = (
                     Resource.objects.filter(uri=resource_uri)
                     .filter(access_clause)
-                    .select_related("organization")
+                    .select_related("organization", "project_index")
                 )
                 fallback_resource = fallback_qs.first()
                 if fallback_resource:

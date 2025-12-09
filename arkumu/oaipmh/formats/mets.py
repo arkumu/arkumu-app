@@ -302,6 +302,11 @@ class METSSerializer:
     def _extract_dublin_core_from_graph(self, graph: Dict[str, Any]) -> Dict[str, list]:
         """Extract Dublin Core elements from the graph."""
         from ..formats.dublin_core import DublinCoreSerializer, DEFAULT_PREDICATE_MAP
+        import logging
+
+        logger = logging.getLogger(__name__)
+        print(f"[METS DEBUG] _extract_dublin_core_from_graph called: org={self.org_code}")
+        logger.info(f"_extract_dublin_core_from_graph called: org={self.org_code}, root_id={graph.get('root_id')}, root_uri={graph.get('root_uri')}")
 
         root_id = graph.get("root_id")
         edges = graph.get("edges", [])
@@ -338,133 +343,121 @@ class METSSerializer:
         return dc_data
 
     def _extract_creators_from_junctions(self, graph: Dict[str, Any]) -> tuple[list, list]:
-        """Extract creators and contributors from junction entities.
+        """Extract creators and contributors from junction entities in the graph.
 
-        Finds actor-event junction entities in the graph and extracts:
-        - dc:creator: actors where ist-urheberin=1 (copyright holders)
-        - dc:contributor: actors where ist-urheberin=0
+        Reads junctions directly from the graph edges/nodes structure - no database queries.
+
+        Finds actor-event junction entities and extracts:
+        - dc:creator: actors where ist-urheberin/besitzt-leistungsschutzrechte=1
+        - dc:contributor: all other actors
 
         Format: "Actor Name (Role)" or just "Actor Name" if no role.
         """
-        from arkumu.metadata.models.triples import Triple
-        from django.db.models import Q
-        import uuid
+        from arkumu.metadata.models.mappings import Mapping
+        import logging
+
+        logger = logging.getLogger(__name__)
 
         creators = []
         contributors = []
 
-        root_id = graph.get("root_id")
-        if not root_id:
-            return creators, contributors
-
         edges = graph.get("edges", []) or []
         nodes = graph.get("nodes", {}) or {}
 
-        # Find direct event IDs (neighbors of the project)
-        event_ids = set()
+        if not edges or not nodes:
+            return creators, contributors
+
+        root_id = graph.get("root_id")
+        root_uri = graph.get("root_uri")
+
+        # Get schema property URIs for this organization
+        actor_fk_uris = set()
+        role_property_uris = set()
+        copyright_flag_uris = set()
+        junction_type_uris = set()
+
+        if self.org_code:
+            mapping = Mapping.get_active_for_organization(self.org_code)
+            if mapping:
+                schema = mapping.mapping_config.get('schema_manifest', {})
+                for ds_name, ds_config in schema.items():
+                    rel_contexts = ds_config.get('relationship_contexts', [])
+                    if not rel_contexts:
+                        continue
+
+                    # Get junction type URI
+                    entity_type = ds_config.get('entity_type', {})
+                    type_uri = entity_type.get('uri', '')
+                    if type_uri:
+                        junction_type_uris.add(type_uri)
+
+                    # Get actor FK URIs
+                    fk_rels = ds_config.get('fk_relationships', [])
+                    for rel in fk_rels:
+                        target_ds = rel.get('target_dataset', '').lower()
+                        if 'akteur' in target_ds or 'actor' in target_ds:
+                            prop_uri = rel.get('source_property_uri', '')
+                            if prop_uri:
+                                actor_fk_uris.add(prop_uri)
+
+                    # Get role URIs
+                    for ctx in rel_contexts:
+                        role_uri = ctx.get('context_property_uri', '')
+                        if role_uri:
+                            role_property_uris.add(role_uri)
+
+                    # Get copyright flag URIs
+                    properties = ds_config.get('properties', {})
+                    for prop_name, prop_config in properties.items():
+                        if 'urheber' in prop_name.lower() or 'leistungsschutz' in prop_name.lower():
+                            flag_uri = prop_config.get('uri', '')
+                            if flag_uri:
+                                copyright_flag_uris.add(flag_uri)
+
+        # Find junctions in the graph by type
+        RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+        junction_nodes = set()
+        for edge in edges:
+            pred_uri = edge.get("predicate_uri")
+            obj_id = edge.get("object_id")
+            if pred_uri == RDF_TYPE_URI and obj_id in junction_type_uris:
+                junction_nodes.add(edge.get("subject_id"))
+
+        if not junction_nodes:
+            logger.debug(f"No junction nodes found in graph for types: {junction_type_uris}")
+            return creators, contributors
+
+        logger.debug(f"Found {len(junction_nodes)} junction nodes in graph")
+
+        # Extract junction data from graph edges
+        from collections import defaultdict
+        junction_data = defaultdict(lambda: {"actor_id": None, "actor_name": None, "role": None, "is_copyright": False})
+
         for edge in edges:
             subj = edge.get("subject_id")
-            obj = edge.get("object_id")
-            if subj == root_id and obj:
-                event_ids.add(obj)
+            if subj not in junction_nodes:
+                continue
 
-        if not event_ids:
-            return creators, contributors
+            pred_uri = edge.get("predicate_uri")
+            obj_id = edge.get("object_id")
+            obj_val = edge.get("object_value")
 
-        # Validate that event_ids are valid UUIDs (skip if mock data)
-        valid_event_ids = []
-        for eid in event_ids:
-            try:
-                uuid.UUID(str(eid))
-                valid_event_ids.append(eid)
-            except (ValueError, AttributeError):
-                pass
+            # Extract actor FK
+            if pred_uri in actor_fk_uris and obj_id:
+                junction_data[subj]["actor_id"] = obj_id
+                # Get actor name from nodes
+                actor_node = nodes.get(obj_id, {})
+                junction_data[subj]["actor_name"] = actor_node.get("name") or actor_node.get("uri", "").split("/")[-1]
 
-        if not valid_event_ids:
-            return creators, contributors
+            # Extract role
+            elif pred_uri in role_property_uris and obj_val:
+                junction_data[subj]["role"] = obj_val
 
-        # Query junction entities that point to these events
-        junction_type_uris = [
-            "http://arkumu.org/data/types/akteurin-ereignis-kreuztabelle",
-            "http://arkumu.org/data/types/akteurin-akteurin-kreuztabelle",
-        ]
+            # Extract copyright flag
+            elif pred_uri in copyright_flag_uris and obj_val:
+                junction_data[subj]["is_copyright"] = obj_val in ("1", "true", True, 1)
 
-        # Find junction entities by type that point to our events
-        from arkumu.metadata.models.resource import Resource
-        RDF_TYPE_URI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-
-        org_filter = Q()
-        if self.org_code:
-            org_filter = Q(subject__organization__code=self.org_code)
-
-        try:
-            junction_type_subjects = (
-                Triple.objects.filter(
-                    Q(predicate__uri=RDF_TYPE_URI)
-                    & (
-                        Q(object__canonical_uri__in=junction_type_uris)
-                        | Q(object__uri__in=junction_type_uris)
-                    )
-                )
-                .filter(org_filter)
-                .values_list("subject_id", flat=True)
-            )
-
-            # Find junctions pointing to our events
-            junction_ids = list(
-                Triple.objects.filter(
-                    subject_id__in=junction_type_subjects,
-                    object_id__in=valid_event_ids,
-                )
-                .values_list("subject_id", flat=True)
-                .distinct()[:50]  # Limit to avoid performance issues
-            )
-        except Exception:
-            # Handle mock data or DB errors gracefully
-            return creators, contributors
-
-        if not junction_ids:
-            return creators, contributors
-
-        # Fetch junction triples
-        junction_triples = Triple.objects.filter(
-            subject_id__in=junction_ids
-        ).select_related("predicate", "object").only(
-            "subject_id",
-            "predicate__uri",
-            "predicate__canonical_uri",
-            "object__id",
-            "object__uri",
-            "object__value",
-            "object__name",
-        )
-
-        # Group by junction entity
-        junction_data: Dict[str, Dict[str, Any]] = {}
-        for t in junction_triples:
-            jid = str(t.subject_id)
-            if jid not in junction_data:
-                junction_data[jid] = {"ist_urheberin": False, "actor_id": None, "role": None}
-
-            pred_uri = t.predicate.canonical_uri or t.predicate.uri or ""
-
-            if "ist-urheberin" in pred_uri:
-                val = t.object.value if hasattr(t.object, "value") else None
-                junction_data[jid]["ist_urheberin"] = val in ("1", "true", True, 1)
-            elif "akteurin-im-ereignis" in pred_uri or "akteurin" in pred_uri.split("/")[-1]:
-                junction_data[jid]["actor_id"] = str(t.object.id)
-            elif "rollen-der-akteurin" in pred_uri or "rolle" in pred_uri.split("/")[-1]:
-                # Get role name
-                role_val = t.object.value or t.object.name if hasattr(t.object, "value") else None
-                if role_val:
-                    junction_data[jid]["role"] = role_val
-
-        # Fetch actor names
-        actor_ids = [d["actor_id"] for d in junction_data.values() if d.get("actor_id")]
-        actor_names = {}
-        if actor_ids:
-            for res in Resource.objects.filter(id__in=actor_ids).only("id", "name", "uri"):
-                actor_names[str(res.id)] = res.name or res.uri.split("/")[-1]
+        logger.debug(f"Extracted {len(junction_data)} junctions with actor/role data")
 
         # Institution keywords to filter out (these should be dc:publisher, not contributor)
         institution_keywords = [
@@ -479,12 +472,10 @@ class METSSerializer:
         # Build creator/contributor lists
         seen = set()
         for jdata in junction_data.values():
-            actor_id = jdata.get("actor_id")
-            if not actor_id or actor_id in seen:
+            actor_name = jdata.get("actor_name")
+            if not actor_name or actor_name in seen:
                 continue
-            seen.add(actor_id)
-
-            actor_name = actor_names.get(actor_id, "Unknown")
+            seen.add(actor_name)
 
             # Skip institutions - they should be dc:publisher, not creator/contributor
             if is_institution(actor_name):
@@ -497,11 +488,12 @@ class METSSerializer:
             else:
                 formatted = actor_name
 
-            if jdata.get("ist_urheberin"):
+            if jdata.get("is_copyright"):
                 creators.append(formatted)
             else:
                 contributors.append(formatted)
 
+        logger.debug(f"Built {len(creators)} creators, {len(contributors)} contributors")
         return creators, contributors
 
 

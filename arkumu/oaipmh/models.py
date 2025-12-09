@@ -184,6 +184,97 @@ class OAIMediaSyncState(models.Model):
         return f"{self.organization_id}:{self.profile}"
 
 
+class OAISnapshotRecord(models.Model):
+    """Pre-serialized OAI record ready for harvesting.
+
+    Stores header and metadata XML directly - no runtime serialization needed.
+    Records are replaced entirely when a new snapshot is generated.
+    """
+
+    # Ordering for stable pagination
+    position = models.PositiveIntegerField(
+        db_index=True,
+        help_text="Position in the snapshot for stable pagination.",
+    )
+
+    # Identifiers
+    uri = models.CharField(
+        max_length=512,
+        unique=True,
+        help_text="Project URI (OAI identifier).",
+    )
+    datestamp = models.DateTimeField(
+        help_text="Record datestamp for OAI header.",
+    )
+
+    # Organization for set-based filtering
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="oai_snapshot_records",
+    )
+
+    # Pre-serialized XML
+    header_xml = models.TextField(
+        help_text="Serialized OAI <header> element.",
+    )
+    metadata_dc_xml = models.TextField(
+        blank=True,
+        help_text="Serialized Dublin Core <metadata> element.",
+    )
+    metadata_mets_xml = models.TextField(
+        blank=True,
+        help_text="Serialized METS <metadata> element.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "OAI Snapshot Record"
+        verbose_name_plural = "OAI Snapshot Records"
+        ordering = ["position"]
+        indexes = [
+            models.Index(fields=["organization", "position"], name="oai_snaprec_org_pos_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.position}:{self.uri}"
+
+
+class OAISnapshotMeta(models.Model):
+    """Singleton metadata for the current OAI snapshot.
+
+    Only one row should exist - stores when snapshot was generated and counts.
+    """
+
+    generated_at = models.DateTimeField(
+        help_text="When the current snapshot was generated.",
+    )
+    total_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Total number of records in the snapshot.",
+    )
+    counts_by_org = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Record counts by organization code.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "OAI Snapshot Metadata"
+        verbose_name_plural = "OAI Snapshot Metadata"
+
+    def __str__(self) -> str:
+        return f"Snapshot {self.generated_at.isoformat()} ({self.total_count} records)"
+
+    @classmethod
+    def get_current(cls) -> "OAISnapshotMeta | None":
+        return cls.objects.first()
+
+
 class OAIDcpPathIndex(models.Model):
     """Indexed KHM DCP bundle file paths, stored relative to the Rosetta root."""
 

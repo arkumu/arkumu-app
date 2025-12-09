@@ -6,11 +6,14 @@ from .oai_project_media_sync_service import (
     OAIProjectMediaSyncService,
     SyncResult,
 )
+from .snapshot_service import oai_snapshot_service, OAISnapshotService
 
 __all__ = [
     "AssemblyContext",
     "OAIProjectAssembler",
     "MediaLinkCandidate",
     "OAIProjectMediaSyncService",
+    "OAISnapshotService",
     "SyncResult",
+    "oai_snapshot_service",
 ]

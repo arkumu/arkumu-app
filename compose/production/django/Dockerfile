@@ -24,7 +24,7 @@ COPY ./requirements .
 
 # Install Python dependencies with cache mounting
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system -r ${BUILD_ENVIRONMENT}.txt
+    uv pip install --system --link-mode=copy -r ${BUILD_ENVIRONMENT}.txt
 
 
 # Python 'run' stage

@@ -21,6 +21,36 @@ from arkumu.oaipmh.services import dcp_index
 
 from .path_mapping import resolve_external_paths
 
+# In-memory cache for DCP folder mappings (digital_object_uri -> folder_name)
+# Loaded once from Triple table, avoids N+1 queries during snapshot generation
+_DCP_FOLDER_CACHE: Dict[str, str] = {}
+_DCP_FOLDER_CACHE_LOADED = False
+
+
+def _load_dcp_folder_cache() -> None:
+    """Load all KHM DCP folder mappings into memory (one-time)."""
+    global _DCP_FOLDER_CACHE, _DCP_FOLDER_CACHE_LOADED
+    if _DCP_FOLDER_CACHE_LOADED:
+        return
+
+    from arkumu.metadata.models import Triple
+
+    DCP_PREDICATE = "http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner"
+    triples = Triple.objects.filter(
+        predicate__uri=DCP_PREDICATE,
+    ).select_related("subject", "object")
+
+    for t in triples:
+        uri = getattr(t.subject, "uri", None)
+        value = getattr(t.object, "value", None)
+        if uri and value:
+            path = str(value).strip().replace("\\", "/")
+            folder_name = path.rstrip("/").split("/")[-1] if "/" in path else path
+            _DCP_FOLDER_CACHE[uri] = folder_name
+
+    _DCP_FOLDER_CACHE_LOADED = True
+    logger.info("DCP folder cache loaded: %d mappings", len(_DCP_FOLDER_CACHE))
+
 
 HARVESTABLE_STORAGE_STATUSES = {"completed", "verified"}
 
@@ -164,12 +194,15 @@ class NormalizedDigitalObject:
 
     @property
     def preferred_location(self) -> Optional[str]:
-        """Return the location that should appear in METS FLocat."""
+        """Return the location that should appear in METS FLocat.
 
-        if self.download_href:
-            return self.download_href
+        For METS, prefer rosetta_path (local hbz path) over download_href (S3 URL)
+        since hbz harvests files from S3 and stores them locally.
+        """
         if self.rosetta_path:
             return self.rosetta_path
+        if self.download_href:
+            return self.download_href
         if self.storage_key:
             return self.storage_key
         return self.original_path or self.access_url
@@ -204,6 +237,7 @@ class OAIProject:
     institution_code: Optional[str]
     digital_objects: Tuple[NormalizedDigitalObject, ...]
     curated_selection: Optional[CuratedMediaSelection] = None
+    graph_data: Optional[Dict[str, Any]] = None  # For RDF generation without queries
 
     @property
     def harvestable(self) -> bool:
@@ -316,7 +350,6 @@ class OAIProjectBuilder:
             # For KHM/HMT: Filter out digital objects from shared events to prevent cross-project contamination
             filtered_record = self._filter_shared_event_objects(filtered_record, institution_code)
         filtered_record = self._filter_flagged_digital_objects(filtered_record)
-        filtered_record = self._filter_overarching_projects(filtered_record, institution_code)
 
         curated_selection: Optional[CuratedMediaSelection] = None
         if use_curated_media_links:
@@ -811,15 +844,18 @@ class OAIProjectBuilder:
                 )
                 return None
 
+        # Build Rosetta path for orgs with configured base paths (both S3 and non-S3)
+        # S3 orgs need this for METS FLocat since hbz harvests files from S3 and stores locally
         if (
-            not is_s3_org
-            and not rosetta_path
+            not rosetta_path
             and normalized_code
             and normalized_code in self._s3_rosetta_bases
             and storage_key
         ):
             base = self._s3_rosetta_bases[normalized_code]
-            candidate = f"{base}/{storage_key.lstrip('/')}"
+            # Use just filename for S3 orgs (flat storage), full key for others
+            path_component = file_name if is_s3_org and file_name else storage_key.lstrip('/')
+            candidate = f"{base}/{path_component}"
             rosetta_path = candidate
             rosetta_candidates = (candidate,)
 
@@ -1068,46 +1104,21 @@ class OAIProjectBuilder:
         if (institution_code or "").strip().lower() != "khm":
             return None
 
-        # Import here to avoid circular dependencies
-        from arkumu.metadata.models import Triple
-
         obj_uri = getattr(obj, "uri", None)
         if not obj_uri:
             return None
 
-        # Query for the DCP folder property
-        try:
-            dcp_folder_triple = (
-                Triple.objects.filter(
-                    subject__uri=obj_uri,
-                    predicate__uri="http://arkumu.org/data/khm/properties/dateipfad-dcp-ordner",
-                )
-                .select_related("object")
-                .first()
-            )
-        except Exception as exc:  # pragma: no cover - defensive logging
-            logger.error("Error querying DCP folder property for %s: %s", obj_uri, exc)
+        # Use cached DCP folder mapping (loaded once, avoids N+1 queries)
+        _load_dcp_folder_cache()
+        folder_name = _DCP_FOLDER_CACHE.get(obj_uri)
+
+        if not folder_name:
             return None
 
-        if not dcp_folder_triple or not getattr(dcp_folder_triple, "object", None):
-            return None
-
-        raw_folder_path = getattr(dcp_folder_triple.object, "value", None)
-        if not raw_folder_path:
-            return None
-
-        folder_path = str(raw_folder_path).strip().replace("\\", "/")
-        if not folder_path:
-            return None
-
-        # Extract just the folder name (last component of the path)
-        folder_path_no_slash = folder_path.rstrip("/")
-        folder_name = folder_path_no_slash.split("/")[-1] if "/" in folder_path_no_slash else folder_path_no_slash
-
-        logger.info("Looking for DCP folder %s (from path: %s)", folder_name, folder_path)
+        logger.info("Looking for DCP folder %s (from cache, uri: %s)", folder_name, obj_uri)
 
         # Use the DCP index service to resolve bundle members as relative paths
-        lookup = dcp_index.get_bundle_members("khm", folder_name, folder_path=folder_path)
+        lookup = dcp_index.get_bundle_members("khm", folder_name)
         if not lookup.relative_file_paths:
             logger.info("No files found in DCP folder %s via index", folder_name)
             return None

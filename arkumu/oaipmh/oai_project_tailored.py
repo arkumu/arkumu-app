@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
+from collections import defaultdict
+from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from uuid import UUID
 
@@ -28,8 +29,178 @@ from .oai_project import (
     _infer_file_name,
     HARVESTABLE_STORAGE_STATUSES,
     parse_fixity,
+    _DCP_FOLDER_CACHE,
+    _load_dcp_folder_cache,
 )
 from arkumu.oaipmh.models import OAIProjectMediaLink
+from arkumu.oaipmh.services import dcp_index
+
+
+def batch_fetch_curated_links(project_ids: Sequence[UUID]) -> Dict[UUID, List]:
+    """
+    Batch fetch curated media links for multiple projects.
+
+    Returns a dict mapping project_id -> list of OAIProjectMediaLink objects
+    with digital_object pre-loaded.
+    """
+    if not project_ids:
+        return {}
+
+    links = (
+        OAIProjectMediaLink.objects.filter(project_id__in=list(project_ids))
+        .select_related("digital_object")
+        .order_by("project_id", "order_index", "created_at", "id")
+    )
+
+    result: Dict[UUID, List] = defaultdict(list)
+    for link in links:
+        result[link.project_id].append(link)
+
+    return dict(result)
+
+
+@dataclass
+class BatchedDcpData:
+    """Pre-fetched DCP folder paths and expanded file lists."""
+    folder_paths: Dict[str, str]  # uri -> folder_path
+    file_lists: Dict[str, Tuple[str, ...]]  # folder_name -> (relative_file_paths,)
+
+
+def batch_fetch_dcp_folders(curated_links_by_project: Dict[UUID, List]) -> BatchedDcpData:
+    """
+    Batch fetch DCP file lists using in-memory cache (no per-request Triple query).
+
+    Returns BatchedDcpData with:
+    - folder_paths: dict mapping digital_object_uri -> folder_name
+    - file_lists: dict mapping folder_name -> tuple of relative file paths
+    """
+    if not curated_links_by_project:
+        return BatchedDcpData(folder_paths={}, file_lists={})
+
+    # Load cache once
+    _load_dcp_folder_cache()
+
+    folder_paths: Dict[str, str] = {}
+    folder_names: List[str] = []
+
+    for links in curated_links_by_project.values():
+        for link in links:
+            digital_obj = getattr(link, "digital_object", None)
+            if digital_obj:
+                obj_uri = getattr(digital_obj, "uri", None)
+                if obj_uri:
+                    folder_name = _DCP_FOLDER_CACHE.get(obj_uri)
+                    if folder_name:
+                        folder_paths[obj_uri] = folder_name
+                        if folder_name not in folder_names:
+                            folder_names.append(folder_name)
+
+    # Batch fetch file lists for all folders
+    file_lists: Dict[str, Tuple[str, ...]] = {}
+    if folder_names:
+        file_lists = dcp_index.batch_get_bundle_members("khm", folder_names)
+
+    return BatchedDcpData(folder_paths=folder_paths, file_lists=file_lists)
+
+
+@dataclass
+class BatchedGraphData:
+    """Pre-fetched data for building graph digital objects."""
+    resources: Dict[str, Resource]  # resource_id -> Resource
+    path_literals: Dict[str, str]   # resource_id -> path
+    checksum_literals: Dict[str, str]  # resource_id -> checksum
+    event_links: Dict[str, List[Tuple[str, str]]]  # resource_id -> [(event_id, event_uri), ...]
+
+
+def batch_fetch_graph_data(
+    resource_ids: Sequence[str],
+    org_code: Optional[str] = None,
+) -> BatchedGraphData:
+    """
+    Batch fetch all data needed for _graph_digital_object for Rosetta orgs.
+
+    This replaces 4 queries per resource with 4 total queries.
+    """
+    result = BatchedGraphData(
+        resources={},
+        path_literals={},
+        checksum_literals={},
+        event_links={},
+    )
+
+    if not resource_ids:
+        return result
+
+    # Convert to UUIDs
+    uuid_list = []
+    id_map: Dict[UUID, str] = {}
+    for rid in resource_ids:
+        try:
+            uuid_val = UUID(str(rid))
+            uuid_list.append(uuid_val)
+            id_map[uuid_val] = str(rid)
+        except (TypeError, ValueError):
+            continue
+
+    if not uuid_list:
+        return result
+
+    # 1. Batch fetch Resources
+    resources = Resource.objects.filter(pk__in=uuid_list).select_related("organization")
+    for r in resources:
+        result.resources[str(r.id)] = r
+
+    # 2. Batch fetch path literals
+    path_predicates = [ProjectURIs.DIGITAL_OBJECT_PATH]
+    normalized_org = (org_code or "").lower().strip()
+    for candidate in _DIGITAL_OBJECT_FALLBACK_PREDICATES.get(normalized_org, ()):
+        if candidate and candidate not in path_predicates:
+            path_predicates.append(candidate)
+
+    path_filter = Q(predicate__canonical_uri__in=path_predicates) | Q(predicate__uri__in=path_predicates)
+    path_triples = Triple.objects.filter(
+        subject_id__in=uuid_list
+    ).filter(path_filter).select_related("object")
+
+    for triple in path_triples:
+        rid = str(triple.subject_id)
+        if rid not in result.path_literals:  # Take first match
+            value = getattr(triple.object, "value", None)
+            if value:
+                result.path_literals[rid] = str(value)
+
+    # 3. Batch fetch checksum literals
+    checksum_predicate = ProjectSnapshotService.ROSETTA_CHECKSUM_PREDICATES.get(normalized_org)
+    if checksum_predicate:
+        checksum_filter = Q(predicate__canonical_uri=checksum_predicate) | Q(predicate__uri=checksum_predicate)
+        checksum_triples = Triple.objects.filter(
+            subject_id__in=uuid_list
+        ).filter(checksum_filter).select_related("object")
+
+        for triple in checksum_triples:
+            rid = str(triple.subject_id)
+            if rid not in result.checksum_literals:
+                value = getattr(triple.object, "value", None)
+                if value:
+                    result.checksum_literals[rid] = str(value)
+
+    # 4. Batch fetch event links
+    event_filter = Q(predicate__canonical_uri=ProjectURIs.DIGITAL_OBJECT_LINK) | Q(
+        predicate__uri=ProjectURIs.DIGITAL_OBJECT_LINK
+    )
+    event_triples = Triple.objects.filter(
+        object_id__in=uuid_list
+    ).filter(event_filter).select_related("subject")
+
+    for triple in event_triples:
+        rid = str(triple.object_id)
+        event_id = str(triple.subject_id)
+        event_uri = getattr(triple.subject, "uri", None) or ""
+        if rid not in result.event_links:
+            result.event_links[rid] = []
+        result.event_links[rid].append((event_id, event_uri))
+
+    return result
 
 _DIGITAL_OBJECT_FALLBACK_PREDICATES: Mapping[str, Sequence[str]] = getattr(
     ProjectSnapshotService,
@@ -76,36 +247,35 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         record: ProjectRecord,
         *,
         skip_shared_event_filter: bool = False,
-        skip_format_exclusion: bool = False,
-        use_curated_media_links: bool = False,
+        prefetched_curated_links: Optional[List] = None,
+        prefetched_dcp_data: Optional[BatchedDcpData] = None,
+        prefetched_graph_data: Optional[BatchedGraphData] = None,
     ) -> OAIProject:
         institution_code = self._resolve_institution_code(record)
-        original_digital_objects = list(getattr(record, "digital_objects", []) or [])
 
         filtered_record = record
         # Tailored feeds intentionally keep shared-event objects, so skip the shared-event filter.
         filtered_record = self._filter_flagged_digital_objects(filtered_record)
         filtered_record = self._filter_overarching_projects(filtered_record, institution_code)
 
+        # Store prefetched data for use in helper methods
+        self._prefetched_dcp_data = prefetched_dcp_data
+        self._prefetched_graph_data = prefetched_graph_data
+
         # Mark DCP bundle members upfront (before normalization)
         self._mark_dcp_bundle_members(filtered_record, institution_code)
 
-        curated_selection: Optional[CuratedMediaSelection] = None
-        if use_curated_media_links:
-            curated_selection = self._resolve_curated_selection(filtered_record)
-
-        normalized_objects = self._normalize_objects(
-            filtered_record,
-            institution_code,
-            skip_format_exclusion=skip_format_exclusion,
-            curated_selection=curated_selection,
-            extra_objects=original_digital_objects,
+        # Tailored feeds ALWAYS use curated media links as source of truth
+        curated_selection = self._resolve_curated_selection(
+            filtered_record, prefetched_links=prefetched_curated_links
         )
-        if use_curated_media_links and curated_selection and not normalized_objects:
-            normalized_objects = self._normalize_curated_only_objects(
-                curated_selection,
-                institution_code,
-            )
+
+        # Always use curated links - they are the source of truth for tailored OAI
+        # No fallback to graph digital objects
+        normalized_objects = self._normalize_curated_only_objects(
+            curated_selection,
+            institution_code,
+        )
 
         return OAIProject(
             record=filtered_record,
@@ -129,15 +299,72 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         institution_code: Optional[str],
     ) -> Optional[List[ProjectDigitalObject]]:
         """
-        Expand DCP folders using the path index - delegates to parent implementation.
+        Expand DCP folders using prefetched data or the path index.
 
         When a digital object has a `dateipfad-dcp-ordner` triple, look up all files
-        in that folder from the path index and return them as expanded objects.
+        in that folder from prefetched data or the path index.
         """
-        # Use the parent class implementation which reads from the path index
+        # Only check for KHM institution
+        if (institution_code or "").strip().lower() != "khm":
+            return None
+
+        obj_uri = getattr(obj, "uri", None)
+        if not obj_uri:
+            return None
+
+        # Try to use prefetched data first (batch loaded at page level)
+        prefetched = getattr(self, "_prefetched_dcp_data", None)
+        if prefetched is not None:
+            folder_path = prefetched.folder_paths.get(obj_uri)
+            if not folder_path:
+                return None
+
+            folder_path_clean = folder_path.replace("\\", "/").rstrip("/")
+            folder_name = folder_path_clean.split("/")[-1] if "/" in folder_path_clean else folder_path_clean
+
+            # Use prefetched file lists
+            relative_file_paths = prefetched.file_lists.get(folder_name, ())
+            if not relative_file_paths:
+                return None
+
+            from django.conf import settings
+            rosetta_root = getattr(settings, "OAI_EXTERNAL_ROSETTA_ROOTS", {}).get("khm") or ""
+            rosetta_root = str(rosetta_root).rstrip("/")
+
+            expanded_objects: List[ProjectDigitalObject] = []
+            for rel_path in relative_file_paths:
+                rel_path_clean = str(rel_path).lstrip("/")
+                if not rel_path_clean:
+                    continue
+                abs_path = f"{rosetta_root}/{rel_path_clean}" if rosetta_root else rel_path_clean
+
+                new_obj = ProjectDigitalObject(
+                    path=abs_path,
+                    uri=obj.uri,
+                )
+                new_obj.resource_id = getattr(obj, "resource_id", None)
+
+                # Copy other relevant attributes from the original object
+                for attr in [
+                    "content_type", "size_bytes", "checksum", "checksum_algorithm",
+                    "checksum_provenance", "access_url", "storage_status", "created_at",
+                    "updated_at", "license", "uuid", "genesis_type", "media_type",
+                    "significant_properties_de", "significant_properties_en",
+                ]:
+                    if hasattr(obj, attr):
+                        value = getattr(obj, attr)
+                        if value is not None:
+                            setattr(new_obj, attr, value)
+
+                # Mark as DCP bundle member
+                setattr(new_obj, "_from_dcp_bundle", True)
+                expanded_objects.append(new_obj)
+
+            return expanded_objects if expanded_objects else None
+
+        # Fall back to parent implementation with individual queries
         expanded = super()._expand_dcp_folder_if_needed(obj, institution_code)
         if expanded:
-            # Mark expanded objects so they bypass curated selection filters
             for expanded_obj in expanded:
                 setattr(expanded_obj, "_from_dcp_bundle", True)
         return expanded
@@ -266,6 +493,15 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         if not obj_uri:
             return None
 
+        # Use prefetched data if available
+        prefetched = getattr(self, "_prefetched_dcp_data", None)
+        if prefetched is not None:
+            folder_path = prefetched.folder_paths.get(obj_uri)
+            if folder_path:
+                return folder_path.rstrip("/")
+            return None
+
+        # Fall back to database query
         from arkumu.metadata.models import Triple
 
         try:
@@ -293,8 +529,11 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
     def _resolve_curated_selection(
         self,
         record: ProjectRecord,
+        prefetched_links: Optional[List] = None,
     ) -> Optional[CuratedMediaSelection]:
-        return self._resolve_curated_selection_with_all_statuses(record)
+        return self._resolve_curated_selection_with_all_statuses(
+            record, prefetched_links=prefetched_links
+        )
 
     def _normalize_objects(
         self,
@@ -544,31 +783,170 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         uri_by_resource: Mapping[str, Optional[str]],
         institution_code: Optional[str],
     ) -> Dict[str, List[ProjectDigitalObject]]:
-        """Load curated media by consulting storage for S3 orgs and the canonical graph otherwise."""
+        """Load curated media from OAIProjectMediaLink.
 
-        curated_objects: Dict[str, List[ProjectDigitalObject]] = {}
-        s3_objects = self._load_curated_objects_from_s3(
-            resource_ids,
-            uri_by_resource,
-            institution_code,
-        )
-        curated_objects.update(s3_objects)
+        S3 orgs (DET/RSH/FUK): S3FileObject only
+        Rosetta orgs (KHM/HMT): dateipfad triple first, S3FileObject fallback
+        """
+        if not resource_ids:
+            return {}
+
+        uuid_map: Dict[UUID, str] = {}
+        for rid in resource_ids:
+            try:
+                uuid_map[UUID(str(rid))] = str(rid)
+            except (TypeError, ValueError):
+                continue
+
+        if not uuid_map:
+            return {}
 
         normalized_code = (institution_code or "").lower().strip()
-        if normalized_code in self._s3_orgs:
-            # For S3 orgs, only accept objects that have verified S3 inventory.
+        is_s3_org = normalized_code in self._s3_orgs
+
+        curated_objects: Dict[str, List[ProjectDigitalObject]] = {}
+
+        # S3 orgs: use S3FileObject only
+        if is_s3_org:
+            files = (
+                S3FileObject.objects.filter(
+                    related_resource_id__in=list(uuid_map.keys()),
+                    s3_key__isnull=False,
+                )
+                .exclude(s3_key="")
+                .select_related("related_resource")
+            )
+
+            for file_obj in files:
+                rid_uuid = getattr(file_obj, "related_resource_id", None)
+                if rid_uuid not in uuid_map:
+                    continue
+                rid_str = uuid_map[rid_uuid]
+
+                filename = file_obj.file_name
+                if not filename and file_obj.s3_key:
+                    filename = file_obj.s3_key.split("/")[-1]
+                if not filename:
+                    continue
+
+                fixity = parse_fixity(getattr(file_obj, "sha256_checksum", None))
+                resource_uri = uri_by_resource.get(rid_str)
+                if not resource_uri and getattr(file_obj, "related_resource", None):
+                    resource_uri = getattr(file_obj.related_resource, "uri", None)
+
+                project_obj = ProjectDigitalObject(
+                    path=filename,
+                    storage_key=file_obj.s3_key,
+                    file_name=filename,
+                    content_type=file_obj.content_type,
+                    size_bytes=file_obj.file_size_bytes,
+                    checksum=fixity.digest,
+                    checksum_algorithm=fixity.algorithm,
+                    checksum_provenance='s3' if fixity.digest else None,
+                    access_url=file_obj.s3_url,
+                    storage_status=file_obj.status,
+                    resource_id=rid_str,
+                    uri=resource_uri,
+                )
+                setattr(project_obj, "_from_s3_file_object", True)
+                curated_objects.setdefault(rid_str, []).append(project_obj)
+
             return curated_objects
 
-        for rid in resource_ids:
-            if rid in curated_objects:
-                continue
-            graph_obj = self._graph_digital_object(
-                rid,
-                uri_by_resource.get(rid),
-                institution_code,
+        # Rosetta orgs (KHM/HMT): dateipfad first, S3 fallback
+        DATEIPFAD_URI = "http://arkumu.org/data/properties/dateipfad"
+        path_triples = Triple.objects.filter(
+            subject_id__in=list(uuid_map.keys()),
+            predicate__canonical_uri=DATEIPFAD_URI,
+        ).select_related("object")
+
+        filename_by_id: Dict[UUID, str] = {}
+        for triple in path_triples:
+            if triple.object and triple.object.value:
+                path_value = str(triple.object.value)
+                filename = path_value.replace("\\", "/").split("/")[-1]
+                if filename:
+                    filename_by_id[triple.subject_id] = filename
+
+        # Get S3 data for fallback and metadata
+        s3_by_id: Dict[UUID, S3FileObject] = {}
+        files = (
+            S3FileObject.objects.filter(
+                related_resource_id__in=list(uuid_map.keys()),
+                s3_key__isnull=False,
             )
-            if graph_obj:
-                curated_objects[rid] = [graph_obj]
+            .exclude(s3_key="")
+            .select_related("related_resource")
+        )
+        for file_obj in files:
+            rid_uuid = getattr(file_obj, "related_resource_id", None)
+            if rid_uuid:
+                s3_by_id[rid_uuid] = file_obj
+
+        # Batch fetch checksums from Triple table for Rosetta orgs
+        checksum_by_id: Dict[UUID, str] = {}
+        checksum_predicate = ProjectSnapshotService.ROSETTA_CHECKSUM_PREDICATES.get(normalized_code)
+        if checksum_predicate:
+            checksum_filter = Q(predicate__canonical_uri=checksum_predicate) | Q(predicate__uri=checksum_predicate)
+            checksum_triples = Triple.objects.filter(
+                subject_id__in=list(uuid_map.keys())
+            ).filter(checksum_filter).select_related("object")
+            for triple in checksum_triples:
+                if triple.object and triple.object.value:
+                    checksum_by_id[triple.subject_id] = str(triple.object.value)
+
+        for rid_uuid, rid_str in uuid_map.items():
+            filename = filename_by_id.get(rid_uuid)
+            s3_obj = s3_by_id.get(rid_uuid)
+
+            # Fallback to S3 filename if no dateipfad
+            if not filename and s3_obj:
+                filename = s3_obj.file_name
+                if not filename and s3_obj.s3_key:
+                    filename = s3_obj.s3_key.split("/")[-1]
+
+            if not filename:
+                continue
+
+            resource_uri = uri_by_resource.get(rid_str)
+            if not resource_uri and s3_obj and getattr(s3_obj, "related_resource", None):
+                resource_uri = getattr(s3_obj.related_resource, "uri", None)
+
+            if s3_obj:
+                fixity = parse_fixity(getattr(s3_obj, "sha256_checksum", None))
+                project_obj = ProjectDigitalObject(
+                    path=filename,
+                    storage_key=s3_obj.s3_key,
+                    file_name=filename,
+                    content_type=s3_obj.content_type,
+                    size_bytes=s3_obj.file_size_bytes,
+                    checksum=fixity.digest,
+                    checksum_algorithm=fixity.algorithm,
+                    checksum_provenance='s3' if fixity.digest else None,
+                    access_url=s3_obj.s3_url,
+                    storage_status=s3_obj.status,
+                    resource_id=rid_str,
+                    uri=resource_uri,
+                )
+            else:
+                # Use checksum from Triple table for Rosetta orgs
+                checksum_literal = checksum_by_id.get(rid_uuid)
+                fixity = parse_fixity(checksum_literal) if checksum_literal else None
+                project_obj = ProjectDigitalObject(
+                    path=filename,
+                    storage_key=None,
+                    file_name=filename,
+                    content_type=None,
+                    storage_status="completed",
+                    resource_id=rid_str,
+                    uri=resource_uri,
+                    checksum=fixity.digest if fixity else None,
+                    checksum_algorithm=fixity.algorithm if fixity else None,
+                    checksum_provenance="metadata" if fixity and fixity.digest else None,
+                )
+
+            setattr(project_obj, "_from_s3_file_object", True)
+            curated_objects.setdefault(rid_str, []).append(project_obj)
 
         return curated_objects
 
@@ -638,27 +1016,23 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         obj: ProjectDigitalObject,
         institution_code: Optional[str],
     ) -> Optional[NormalizedDigitalObject]:
-        if institution_code and institution_code in self._s3_orgs:
-            setattr(obj, "_bypass_dump_fixity", True)
+        # Only process objects from S3FileObject or curated media links
+        from_s3 = getattr(obj, "_from_s3_file_object", False)
+        from_curated = getattr(obj, "_from_curated_media_link", False)
+        if not from_s3 and not from_curated:
+            return None
+
+        setattr(obj, "_bypass_dump_fixity", True)
         normalized = super()._normalize_object(obj, institution_code)
         if not normalized:
             return None
-        normalized_code = (institution_code or "").lower().strip()
-        if normalized_code in self._s3_orgs:
-            if getattr(obj, "_from_s3_file_object", False):
-                return normalized
-            # Objects without verified S3 inventory are not eligible for tailored exports.
-            return None
 
-        # For Rosetta orgs (KHM/HMT), prefer prefix+filename to avoid leaking deep ingest paths
-        # BUT: Don't rewrite paths for DCP bundle files - they need to keep the folder structure
+        # Apply rosetta prefix for ALL orgs
+        # Output is always: {rosetta_prefix}/{filename}
+        # DCP bundle files keep their folder structure
+        normalized_code = (institution_code or "").lower().strip()
         is_dcp_bundle = getattr(obj, "_from_dcp_bundle", False)
-        if (
-            normalized.source == "rosetta"
-            and normalized.file_name
-            and normalized_code in {"khm", "hmt"}
-            and not is_dcp_bundle
-        ):
+        if normalized.file_name and not is_dcp_bundle:
             prefix = self._rosetta_curated_prefixes.get(normalized_code)
             if prefix:
                 rosetta_path = f"{prefix}/{normalized.file_name}"
@@ -676,6 +1050,14 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         uri_hint: Optional[str],
         institution_code: Optional[str],
     ) -> Optional[ProjectDigitalObject]:
+        # Try prefetched data first (batch loaded at page level)
+        prefetched = getattr(self, "_prefetched_graph_data", None)
+        if prefetched is not None:
+            return self._graph_digital_object_from_prefetched(
+                resource_id, uri_hint, institution_code, prefetched
+            )
+
+        # Fallback to individual queries
         try:
             resource = Resource.objects.select_related("organization").get(pk=resource_id)
         except Resource.DoesNotExist:
@@ -747,6 +1129,60 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
 
         return project_obj
 
+    def _graph_digital_object_from_prefetched(
+        self,
+        resource_id: str,
+        uri_hint: Optional[str],
+        institution_code: Optional[str],
+        prefetched: BatchedGraphData,
+    ) -> Optional[ProjectDigitalObject]:
+        """Build digital object from prefetched batch data (no DB queries)."""
+        resource = prefetched.resources.get(resource_id)
+        path_literal = prefetched.path_literals.get(resource_id)
+
+        if not path_literal:
+            return None
+
+        resource_uri = uri_hint
+        org_code = None
+        if resource:
+            resource_uri = getattr(resource, "uri", None) or uri_hint
+            organization = getattr(resource, "organization", None)
+            if organization:
+                org_code = (getattr(organization, "code", "") or "").lower().strip()
+
+        project_obj = ProjectDigitalObject(
+            path=path_literal,
+            storage_key=path_literal,
+            file_name=None,
+            content_type=None,
+            storage_status="completed",
+            resource_id=resource_id,
+            uri=resource_uri,
+        )
+        file_name = _infer_file_name(project_obj)
+        if file_name:
+            project_obj.file_name = file_name
+        project_obj.content_type = _guess_mime_type(project_obj)
+        project_obj.source = "graph"
+
+        # Use prefetched checksum
+        checksum_literal = prefetched.checksum_literals.get(resource_id)
+        if checksum_literal:
+            fixity = parse_fixity(checksum_literal)
+            if fixity.digest:
+                project_obj.checksum = fixity.digest
+                project_obj.checksum_algorithm = fixity.algorithm or "sha256"
+                project_obj.checksum_provenance = fixity.provenance or "metadata"
+
+        # Use prefetched event links
+        event_links = prefetched.event_links.get(resource_id, [])
+        if event_links:
+            project_obj.source_event_ids = [link[0] for link in event_links]
+            project_obj.source_event_uris = [link[1] for link in event_links if link[1]]
+
+        return project_obj
+
     def _literal_from_subject(
         self,
         subject_id: UUID,
@@ -770,6 +1206,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
     def _resolve_curated_selection_with_all_statuses(
         self,
         record: ProjectRecord,
+        prefetched_links: Optional[List] = None,
     ) -> Optional[CuratedMediaSelection]:
         subject_id = getattr(record, "subject_id", None)
         if not subject_id:
@@ -780,18 +1217,22 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         except (TypeError, ValueError):
             return None
 
-        links = list(
-            OAIProjectMediaLink.objects.for_project(project_uuid)
-            .ordered()
-            .select_related("digital_object")
-            .annotate(
-                other_project_refs=Count(
-                    "digital_object__oai_media_references",
-                    filter=~Q(digital_object__oai_media_references__project_id=project_uuid),
-                    distinct=True,
+        # Use prefetched links if available, otherwise query the database
+        if prefetched_links is not None:
+            links = prefetched_links
+        else:
+            links = list(
+                OAIProjectMediaLink.objects.for_project(project_uuid)
+                .ordered()
+                .select_related("digital_object")
+                .annotate(
+                    other_project_refs=Count(
+                        "digital_object__oai_media_references",
+                        filter=~Q(digital_object__oai_media_references__project_id=project_uuid),
+                        distinct=True,
+                    )
                 )
             )
-        )
         if not links:
             return None
 

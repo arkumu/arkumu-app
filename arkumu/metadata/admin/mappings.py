@@ -811,11 +811,42 @@ class MappingAdmin(admin.ModelAdmin):
         'action_set_active_mapping',
         'action_promote_legacy_junctions',
         'action_generate_promoted_manifest',
+        'action_export_mapping',
         'mark_as_validated',
         'mark_as_active',
         'reset_to_draft',
         'clear_execution_stats',
     ]
+
+    @admin.action(description=_("Export mapping as JSON"))
+    def action_export_mapping(self, request, queryset):
+        """Export selected mapping as a JSON file for backup/reimport."""
+        if queryset.count() != 1:
+            self.message_user(
+                request,
+                "Select exactly one mapping to export.",
+                level=messages.ERROR,
+            )
+            return
+
+        mapping = queryset.first()
+
+        # Export mapping_config with keys renamed for importer compatibility
+        export_data = dict(mapping.mapping_config or {})
+
+        # Importer expects 'metadata' not 'original_metadata'
+        if 'original_metadata' in export_data:
+            export_data['metadata'] = export_data.pop('original_metadata')
+
+        # Create JSON response
+        response = HttpResponse(
+            json.dumps(export_data, indent=2, ensure_ascii=False, default=str),
+            content_type="application/json",
+        )
+        filename = f"{mapping.organization_id}_{mapping.name.replace(' ', '_')}.json"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+        return response
     
     def mark_as_validated(self, request, queryset):
         """Mark selected mappings as validated."""

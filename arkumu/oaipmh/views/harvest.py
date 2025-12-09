@@ -319,11 +319,11 @@ def _get_resources_queryset(
         queryset = (
             Resource.objects.filter(uri__in=uris)
             .filter(access_clause)
-            .select_related('organization')
+            .select_related('organization', 'project_index')
             .order_by('updated_at', 'id')
         )
     else:
-        queryset = Resource.objects.filter(access_clause).select_related('organization')
+        queryset = Resource.objects.filter(access_clause).select_related('organization', 'project_index')
         if project_type_clause is not None:
             typed_queryset = queryset.filter(project_type_clause).distinct()
             if typed_queryset.exists():

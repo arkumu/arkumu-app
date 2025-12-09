@@ -769,8 +769,6 @@ def _build_project_row_context(
         curated_project = builder.from_project_record(
             record,
             skip_shared_event_filter=True,
-            skip_format_exclusion=True,
-            use_curated_media_links=True,
         )
     except Exception:
         logger.exception("Failed to build curated project view for %s", resource.uri)

@@ -260,7 +260,7 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
             resource_qs = (
                 Resource.objects.filter(uri=resource_uri)
                 .filter(access_clause)
-                .select_related("organization")
+                .select_related("organization", "project_index")
             )
             if project_type_clause is not None:
                 resource_qs = resource_qs.filter(project_type_clause).distinct()
@@ -291,7 +291,7 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
                 fallback_qs = (
                     Resource.objects.filter(uri=resource_uri)
                     .filter(access_clause)
-                    .select_related("organization")
+                    .select_related("organization", "project_index")
                 )
                 fallback_resource = fallback_qs.first()
                 if fallback_resource:
@@ -393,8 +393,8 @@ def _handle_oai_request(request: HttpRequest) -> HttpResponse:
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def oai_endpoint(request: HttpRequest) -> HttpResponse:
-    """Snapshot-based OAI endpoint - always uses pre-built snapshots, never DB mode."""
-    with _force_db_mode(False):
+    """Public OAI endpoint - serves tailored mode for external harvesters (IP-restricted by nginx)."""
+    with _force_db_mode(True), _force_curated_links(True), _force_tailored_mode(True):
         return _handle_oai_request(request)
 @general_login_required
 @csrf_exempt

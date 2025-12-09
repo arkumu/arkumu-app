@@ -60,6 +60,12 @@ class ProjectIndex(models.Model):
     catchphrase_labels = ArrayField(models.TextField(), default=list, blank=True)
     digital_object_paths = ArrayField(models.TextField(), default=list, blank=True)
 
+    # --- Pre-computed DC metadata for OAI-PMH ---
+    dc_creators = ArrayField(models.TextField(), default=list, blank=True)
+    dc_contributors = ArrayField(models.TextField(), default=list, blank=True)
+    has_copyright_holder = models.BooleanField(default=False)
+    has_neighbouring_rights_holder = models.BooleanField(default=False)
+
     # --- Structured JSON for detail views ---
     categories = models.JSONField(default=list)  # [{label, uri, slug}]
     actors = models.JSONField(default=list)  # [{name, roles, uri}]
@@ -78,6 +84,18 @@ class ProjectIndex(models.Model):
 
     # --- Full record JSON blob ---
     record_jsonb = models.JSONField(default=dict)
+
+    # --- Pre-computed RDF/XML for OAI-PMH ---
+    canonical_rdf_xml = models.TextField(
+        blank=True,
+        default="",
+        help_text="Pre-serialized RDF/XML of the canonical entity graph",
+    )
+    institutional_rdf_xml = models.TextField(
+        blank=True,
+        default="",
+        help_text="Pre-serialized RDF/XML of the institutional/org-specific entity graph",
+    )
 
     # --- Flags ---
     reference_only = models.BooleanField(default=False)
@@ -190,6 +208,16 @@ class ProjectIndex(models.Model):
 
         return card
 
+    # --- RDF properties ---
+
+    @property
+    def has_canonical_rdf(self) -> bool:
+        return bool(self.canonical_rdf_xml)
+
+    @property
+    def has_institutional_rdf(self) -> bool:
+        return bool(self.institutional_rdf_xml)
+
     # --- Record methods ---
 
     def to_record(self) -> Optional["ProjectRecord"]:
@@ -240,13 +268,23 @@ class ProjectIndex(models.Model):
         """Extract image paths with preview availability."""
         from arkumu.catalog.models import PreviewImages
 
+        def normalize(p: str) -> str:
+            return p.replace("\\", "/").replace(" ", "_")
+
         candidates = []
+        seen = set()
         if self.image:
-            candidates.append(self.image)
+            norm = normalize(self.image)
+            if norm not in seen:
+                seen.add(norm)
+                candidates.append(norm)
         for obj in self.digital_objects or []:
             path = obj.get("path")
             if path:
-                candidates.append(path)
+                norm = normalize(path)
+                if norm not in seen:
+                    seen.add(norm)
+                    candidates.append(norm)
 
         preview_paths = []
         for candidate in candidates:

@@ -47,6 +47,13 @@
           </svg>
           Create Equipment &amp; Software
         </a>
+        {% elif entity_type == 'alternativer_titel' %}
+        <a href="{% url 'metadata:create_alternativer_titel' %}?entity=alternativer_titel{% if organization_code %}&organization={{ organization_code }}{% endif %}" class="btn btn-sm btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Create Alternativer Titel
+        </a>
         {% endif %}
       </div>
       <form class="flex flex-wrap items-center gap-2"

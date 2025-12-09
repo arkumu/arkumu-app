@@ -64,6 +64,8 @@ def build_rdf_graph(
     resource: Resource,
     *,
     graph_service: Optional[CanonicalGraphService] = None,
+    graph_data: Optional[Dict[str, Any]] = None,
+    use_institutional_predicates: bool = False,
 ) -> ET._Element:
     """
     Build an RDF/XML element representing the resource graph.
@@ -71,45 +73,83 @@ def build_rdf_graph(
     Args:
         resource: The root resource whose graph should be serialised.
         graph_service: Optional canonical graph service to reuse in tests.
+        graph_data: Optional pre-fetched graph data (from bulk fetch). If provided,
+                    skips the per-entity graph query.
+        use_institutional_predicates: If True, use predicate_uri (native) instead of
+                    predicate_canonical (normalized). Used for institutional RDF.
 
     Returns:
         lxml element containing the RDF/XML serialisation.
     """
     org_code = resource.organization.code if resource.organization else None
     service = graph_service or CanonicalGraphService(org_code=org_code)
-    graph_data = service.get_entity_graph(
-        resource_uri=resource.uri,
-        expand_neighbors=True,
-        depth=2,
-        restrict_to_org=bool(org_code),
-    )
+
+    skip_junction_fetch = graph_data is not None  # Pre-fetched data already has junctions
+
+    if graph_data is None:
+        graph_data = service.get_entity_graph(
+            resource_uri=resource.uri,
+            expand_neighbors=True,
+            depth=2,
+            restrict_to_org=bool(org_code),
+        )
 
     # Fetch junction entities (Kreuztabelle) for events to include actor-role relationships
     # Actors already appear with deutscher-name from depth=2, but junctions add:
     # - ist-urheberin, leistungsschutz flags
     # - links to roles (akteurin-hat-rolle-im-ereignis)
+    # Skip if graph_data was pre-fetched (rebuild already includes junctions)
     nodes = graph_data.get("nodes", {})
     edges = graph_data.get("edges", [])
 
-    # Find event IDs from existing nodes
-    event_ids: List[str] = [
-        node_id
-        for node_id, node in nodes.items()
-        if node.get("uri") and "/ereignis" in node.get("uri", "").lower()
-    ]
+    if not skip_junction_fetch:
+        # Find event IDs using canonical event predicate (org-agnostic)
+        from arkumu.metadata.canonical import canonical_uri
+        EVENT_CANONICAL = canonical_uri("event")
 
-    if event_ids:
-        junction_edges = service.fetch_junction_entities(event_ids)
-        if junction_edges:
-            # Add junction edges to the graph
-            for edge in junction_edges:
-                edges.append(edge.__dict__)
+        # Get root identifier - try root_id first, fallback to root_uri
+        root_id = graph_data.get("root_id")
+        root_uri = graph_data.get("root_uri") if not root_id else None
 
-            # Collect new nodes for junction entities and their linked resources
-            new_nodes = service._collect_nodes_from_edges(junction_edges)
-            for node_id, node_data in new_nodes.items():
-                if node_id not in nodes:
-                    nodes[node_id] = node_data
+        # Find root ID from URI if needed (graph_data from get_project_graphs uses URIs as node keys)
+        if root_uri and not root_id:
+            root_id = root_uri  # In URI-keyed graphs, use URI as identifier
+
+        event_ids: List[str] = []
+        if root_id:
+            # Only include events directly linked to the root resource via canonical event predicate
+            # Handle both ID-based and URI-based graphs
+            event_identifiers = [
+                edge.get("object_id") or edge.get("object_uri")
+                for edge in edges
+                if (edge.get("subject_id") == root_id or edge.get("subject_uri") == root_id)
+                and edge.get("predicate_canonical") == EVENT_CANONICAL
+                and (edge.get("object_id") or edge.get("object_uri"))
+            ]
+
+            # Convert URIs to UUIDs if necessary (fetch_junction_entities expects UUIDs)
+            # Check if these are URIs (contain "http") or UUIDs
+            if event_identifiers and "http" in str(event_identifiers[0]):
+                # URI-based graph - need to resolve URIs to Resource UUIDs
+                from arkumu.metadata.models.resource import Resource
+                event_resources = Resource.objects.filter(uri__in=event_identifiers).only("id")
+                event_ids = [str(r.id) for r in event_resources]
+            else:
+                # UUID-based graph
+                event_ids = event_identifiers
+
+        if event_ids:
+            junction_edges = service.fetch_junction_entities(event_ids)
+            if junction_edges:
+                # Add junction edges to the graph
+                for edge in junction_edges:
+                    edges.append(edge.__dict__)
+
+                # Collect new nodes for junction entities and their linked resources
+                new_nodes = service._collect_nodes_from_edges(junction_edges)
+                for node_id, node_data in new_nodes.items():
+                    if node_id not in nodes:
+                        nodes[node_id] = node_data
 
     rdf_graph = rdflib.Graph()
 
@@ -139,10 +179,11 @@ def build_rdf_graph(
         if ns_uri.startswith("http://arkumu.org/data/") and ns_uri.endswith("/properties/"):
             suffix = ns_uri[len("http://arkumu.org/data/"):-len("/properties/")].strip("/")
             if not suffix:
-                candidate = "ark_prop"
+                candidate = "arkumu"
             else:
+                # Use org code directly as prefix (e.g., "khm" not "khm_prop")
                 parts = [part for part in suffix.split("/") if part]
-                candidate = f"{parts[-1]}_prop" if parts else "ark_prop"
+                candidate = parts[-1] if parts else "arkumu"
         else:
             parsed = urlparse(ns_uri)
             host = parsed.netloc.split(":")[0].replace(".", "_")
@@ -182,14 +223,30 @@ def build_rdf_graph(
     for edge in edges:
         subj_node = _node_info(edge.get("subject_id"))
         obj_node = _node_info(edge.get("object_id"))
-        predicate_source = edge.get("predicate_canonical") or edge.get("predicate_uri")
-        normalized_predicate = _normalize_predicate_uri(predicate_source)
+        if use_institutional_predicates:
+            predicate_source = edge.get("predicate_uri")
+            # Don't normalize institutional predicates - keep org prefix
+            normalized_predicate = predicate_source
+        else:
+            predicate_source = edge.get("predicate_canonical") or edge.get("predicate_uri")
+            normalized_predicate = _normalize_predicate_uri(predicate_source)
 
         if not subj_node or not obj_node or not normalized_predicate:
             continue
 
         if predicate_source and "defines" in predicate_source.lower():
             continue
+
+        # Skip redundant digitales-objekt links from KHM junction tables
+        # KHM data repeats all project DOs on every junction (grundereignis, kreuz-*)
+        # Only keep digitales-objekt links from the project entity itself
+        if predicate_source and "digitales-objekt" in predicate_source.lower():
+            subj_uri_check = subj_node.get("uri") if subj_node else ""
+            # Only apply to KHM - other orgs don't have this redundancy
+            if subj_uri_check and "/data/khm/" in subj_uri_check:
+                # Allow from projekt entities, skip from junctions
+                if "/00-projekte/" not in subj_uri_check:
+                    continue
 
         if not _is_data_node(subj_node):
             continue
@@ -211,6 +268,8 @@ def build_rdf_graph(
 
         if _is_literal(obj_node):
             literal_value = obj_node.get("value") or ""
+            # Strip invalid XML control characters (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F)
+            literal_value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', literal_value)
             rdf_graph.add((subject_ref, predicate_ref, rdflib.Literal(literal_value)))
             continue
 

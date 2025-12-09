@@ -16,6 +16,7 @@ from arkumu.oaipmh.constants import (
     DNX_NS,
     METS_NS as DEFAULT_METS_NS,
     METS_SCHEMA_URL as DEFAULT_METS_SCHEMA_URL,
+    ROSETTA_METS_NS,
     XLINK_NS,
     XSI_NS,
 )
@@ -32,12 +33,16 @@ REPO_GRANULARITY = "YYYY-MM-DDThh:mm:ssZ"
 SCHEMA_DESCRIPTION_NS = "http://arkumu.org/oai/schema-info/1.0"
 REPO_REPOSITORY_IDENTIFIER = "arkumu"
 
-METS_NS = DEFAULT_METS_NS
+# Toggle between LOC METS and Rosetta METS namespace for testing
+USE_ROSETTA_METS = False  # Set to False for standard LOC METS
+
+METS_NS = ROSETTA_METS_NS if USE_ROSETTA_METS else DEFAULT_METS_NS
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
-METS_SCHEMA_URL = DEFAULT_METS_SCHEMA_URL
+# Rosetta doesn't have a public schema URL, use local reference
+METS_SCHEMA_URL = "rosettaMets.xsd" if USE_ROSETTA_METS else DEFAULT_METS_SCHEMA_URL
 XML_NS = "http://www.w3.org/XML/1998/namespace"
 SUPPORTED_METADATA_FORMATS = ["oai_dc", "mets"]
-METS_PROFILE_VERSION = "LOC-METS"
+METS_PROFILE_VERSION = "ROSETTA-METS" if USE_ROSETTA_METS else "LOC-METS"
 METS_SCHEMA_FILE = Path(settings.BASE_DIR) / "arkumu/oaipmh/schema/mets.xsd"
 METS_LEGACY_SCHEMA_FILE = METS_SCHEMA_FILE
 HARVESTABLE_FILE_STATUSES = HARVESTABLE_STORAGE_STATUSES

@@ -65,11 +65,28 @@ def _get_db_project_assembler() -> Optional[OAIProjectAssembler]:
         _db_project_assembler_instance = OAIProjectAssembler()
     return _db_project_assembler_instance
 def _build_project_hint_from_resource(resource: Resource) -> Optional[OAIProject]:
-    record = _assemble_record_from_db(resource)
+    """Build OAI project from resource.
+
+    Uses ProjectIndex.record_jsonb directly when available for fast access.
+    """
+    record = None
+
+    # Fast path: use pre-computed ProjectIndex.record_jsonb
+    project_index = getattr(resource, "project_index", None)
+    if project_index is not None:
+        try:
+            record = project_index.to_record()
+        except Exception:
+            logger.debug("Failed to load record from ProjectIndex for %s", resource.uri)
+
+    # Fallback to assembler/snapshot
+    if record is None:
+        record = _assemble_record_from_db(resource)
     if record is None and not _db_mode_enabled():
         record = snapshot_service.get_record_by_uri(resource.uri)
     if record is None:
         return None
+
     try:
         builder = get_project_builder()
         return builder.from_project_record(
@@ -83,28 +100,112 @@ def _build_project_hint_from_resource(resource: Resource) -> Optional[OAIProject
         return None
 
 
-def _build_tailored_project_hint_from_resource(resource: Resource) -> Optional[OAIProject]:
-    """Build a tailored project using the tailored-only builder."""
+def _build_tailored_project_hint_from_resource(
+    resource: Resource,
+    prefetched_curated_links: Optional[list] = None,
+    prefetched_dcp_data: Optional[object] = None,
+    prefetched_graph_data: Optional[object] = None,
+    force_live: bool = False,
+) -> Optional[OAIProject]:
+    """Build a tailored project using the tailored-only builder.
 
-    record = _assemble_record_from_db(resource)
+    Uses ProjectIndex.record_jsonb directly for fast access, avoiding
+    expensive canonical graph queries. Digital objects come from
+    OAIProjectMediaLink via curated media links.
+
+    Args:
+        force_live: If True, skip ProjectIndex and build fresh from graph_service.
+                   Use for GetRecord previews to ensure latest actor data.
+    """
+    import time
+    from dataclasses import replace as dataclass_replace
+
+    t0 = time.time()
+    record = None
+    record_source = "none"
+
+    # Live path: build fresh from graph_service (for GetRecord)
+    if force_live:
+        org_code = resource.organization.code if resource.organization else None
+        if org_code:
+            from arkumu.projects.services.graph_service import get_project_graphs
+            graphs = get_project_graphs(str(resource.id), org_code)
+            if graphs:
+                record = graphs.to_project_record(str(resource.id))
+                record_source = "graph_service"
+
+    # Fast path: use pre-computed ProjectIndex.record_jsonb
+    if record is None:
+        project_index = getattr(resource, "project_index", None)
+        if project_index is not None:
+            try:
+                record = project_index.to_record()
+                record_source = "index"
+            except Exception:
+                logger.debug("Failed to load record from ProjectIndex for %s", resource.uri)
+
+    # Fallback to assembler/snapshot only if index record unavailable
+    if record is None:
+        record = _assemble_record_from_db(resource)
+        if record:
+            record_source = "assembler"
     if record is None and not _db_mode_enabled():
         record = snapshot_service.get_record_by_uri(resource.uri)
+        if record:
+            record_source = "snapshot"
     if record is None:
         return None
 
-    # For tailored profile, clear snapshot digital_objects so the builder loads
-    # from curated media links instead. The snapshot's digital_objects lack proper
-    # URIs needed for DCP folder expansion.
-    from dataclasses import replace as dataclass_replace
-    record = dataclass_replace(record, digital_objects=[])
+    t1 = time.time()
+
+    # Ensure institution metadata is set from resource if missing
+    # This is critical for Rosetta path rewriting (KHM/HMT orgs)
+    org = getattr(resource, "organization", None)
+    if org:
+        org_code = getattr(org, "code", None)
+        normalized_code = org_code.lower().strip() if isinstance(org_code, str) and org_code.strip() else None
+        org_label = getattr(org, "name", None) or org_code
+
+        institution = getattr(record, "institution", None)
+        if institution is None and (org_label or normalized_code):
+            from arkumu.projects import ProjectInstitution
+            record = dataclass_replace(record, institution=ProjectInstitution(label=org_label, code=normalized_code))
+        elif institution and normalized_code and not getattr(institution, "code", None):
+            from arkumu.projects import ProjectInstitution
+            record = dataclass_replace(
+                record,
+                institution=ProjectInstitution(
+                    label=getattr(institution, "label", None) or org_label,
+                    uri=getattr(institution, "uri", None),
+                    code=normalized_code,
+                )
+            )
+
+        # Ensure institution_codes list includes the org code
+        if normalized_code:
+            codes = list(getattr(record, "institution_codes", []) or [])
+            if normalized_code not in {code.lower() for code in codes if code}:
+                codes.append(normalized_code)
+                record = dataclass_replace(record, institution_codes=codes)
 
     try:
-        return _tailored_project_builder.from_project_record(
+        result = _tailored_project_builder.from_project_record(
             record,
             skip_shared_event_filter=False,
-            skip_format_exclusion=_db_mode_enabled(),
-            use_curated_media_links=True,
+            prefetched_curated_links=prefetched_curated_links,
+            prefetched_dcp_data=prefetched_dcp_data,
+            prefetched_graph_data=prefetched_graph_data,
         )
+        t2 = time.time()
+        logger.debug(
+            "OAI build %s: record=%.3fs (%s), builder=%.3fs, total=%.3fs",
+            resource.uri[-20:],
+            t1 - t0,
+            record_source,
+            t2 - t1,
+            t2 - t0,
+        )
+        return result
     except Exception:
         logger.exception("Failed to build tailored OAI project for %s", resource.uri)
         return None

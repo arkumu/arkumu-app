@@ -21,6 +21,7 @@ from arkumu.common.arkumu_license import (
 from arkumu.common.uri_utils import slugify_uri_part
 from arkumu.metadata.models.resource import PublicAccessLevel, Resource
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
+from arkumu.projects.services.graph_service import get_project_graphs
 from arkumu.storage.models.s3_file_objects import S3FileObject
 from arkumu.oaipmh.constants import DNX_NS, XLINK_NS, XSI_NS
 from arkumu.oaipmh.formats.dublin_core import DC_NS, DCTERMS_NS, OAI_DC_NS
@@ -663,6 +664,7 @@ def _build_dc_payload_from_project(
     resource: Resource,
     *,
     include_event_details: bool = True,
+    force_live_dc: bool = False,
 ) -> Dict[str, List[str]]:
     payload: Dict[str, List[str]] = {}
 
@@ -676,36 +678,32 @@ def _build_dc_payload_from_project(
         )
 
     _add_dc_value(payload, 'title', record.title)
-    for alt in record.alternative_titles:
-        _add_dc_value(payload, 'title', getattr(alt, 'value', None))
 
     _add_dc_value(payload, 'description', record.description)
 
     if record.institution and record.institution.label:
         _add_dc_value(payload, 'publisher', record.institution.label)
 
-    # Extract creators/contributors from junction entities (ist-urheberin based)
-    # This works for KHM/HMT that have junction tables with ist-urheberin flags
-    creators, contributors = _extract_creators_from_junctions(resource, record)
-    for creator in creators:
-        _add_dc_value(payload, 'creator', creator)
-    for contributor in contributors:
-        _add_dc_value(payload, 'contributor', contributor)
+    # Try to use pre-computed DC metadata from ProjectIndex for better performance
+    # Skip precomputed if force_live_dc is True (for GetRecord previews)
+    project_index = getattr(resource, "project_index", None) if not force_live_dc else None
+    precomputed_creators = getattr(project_index, "dc_creators", None) if project_index else None
+    precomputed_contributors = getattr(project_index, "dc_contributors", None) if project_index else None
 
-    # Fallback: If no creators found from junctions, use primary event actors from record
-    # This maintains compatibility with canonical entities (FUK/DET/RSH) and tests
-    if not creators and not contributors:
-        primary_actors = _select_primary_event_actors(record)
-        seen_creators: set[str] = set()
-        for actor in primary_actors:
-            name = actor.get('name')
-            if name and name not in seen_creators:
-                _add_dc_value(payload, 'creator', name)
-                seen_creators.add(name)
-
-            for role in actor.get('roles') or []:
-                contributor_value = f"{name} ({role})" if name else role
-                _add_dc_value(payload, 'contributor', contributor_value)
+    if precomputed_creators or precomputed_contributors:
+        # Use pre-computed values from ProjectIndex
+        for creator in (precomputed_creators or []):
+            _add_dc_value(payload, 'creator', creator)
+        for contributor in (precomputed_contributors or []):
+            _add_dc_value(payload, 'contributor', contributor)
+    else:
+        # Extract from ProjectRecord (same logic as precomputed)
+        from arkumu.catalog.services.project_index_db_service import _extract_dc_metadata_from_record
+        dc_meta = _extract_dc_metadata_from_record(record)
+        for creator in dc_meta.creators:
+            _add_dc_value(payload, 'creator', creator)
+        for contributor in dc_meta.contributors:
+            _add_dc_value(payload, 'contributor', contributor)
 
     if record.project_type and record.project_type.label:
         _add_dc_value(payload, 'type', record.project_type.label)
@@ -1046,17 +1044,29 @@ def _build_simplified_mets_from_project(
     resource: Resource,
     *,
     request: Optional[HttpRequest] = None,
+    force_live_rdf: bool = False,
 ) -> ET._Element:
-    """Emit the pared-down METS variant used exclusively by the DB endpoint."""
+    """Emit the pared-down METS variant used exclusively by the DB endpoint.
+
+    Args:
+        force_live_rdf: If True, always fetch RDF on-demand (skip precomputed ProjectIndex).
+                       Use for GetRecord previews; False for ListRecords harvesting.
+    """
+    import time as _time
+    _t0 = _time.perf_counter()
 
     _register_rosetta_namespaces()
 
     record = project.record
+    _t_dc0 = _time.perf_counter()
     dc_payload = _build_dc_payload_from_project(
         project,
         resource,
         include_event_details=False,
+        force_live_dc=force_live_rdf,
     )
+    _t_dc1 = _time.perf_counter()
+    logger.info("DC payload build took %.3fs", _t_dc1 - _t_dc0)
     reference_parent = None
     for candidate in getattr(record, "reference_project_uris", []) or []:
         if candidate:
@@ -1066,30 +1076,10 @@ def _build_simplified_mets_from_project(
         _add_dc_value(dc_payload, 'isPartOf', reference_parent, namespace='dcterms')
     mets_root = ET.Element(ET.QName(METS_NS, "mets"), nsmap=METS_NSMAP)
     mets_root.set(f"{{{XSI_NS}}}schemaLocation", f"{METS_NS} {METS_SCHEMA_URL}")
-    mets_root.set("OBJID", getattr(record, "uri", getattr(resource, "uri", "")) or "")
 
-    timestamp = datetime.now(dt_timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    mets_hdr = ET.SubElement(
-        mets_root,
-        ET.QName(METS_NS, "metsHdr"),
-        {
-            "CREATEDATE": timestamp,
-            "LASTMODDATE": timestamp,
-        },
-    )
-    agent = ET.SubElement(
-        mets_hdr,
-        ET.QName(METS_NS, "agent"),
-        {
-            "ROLE": "CREATOR",
-            "TYPE": "OTHER",
-            "OTHERTYPE": "SOFTWARE",
-        },
-    )
-    ET.SubElement(agent, ET.QName(METS_NS, "name")).text = "Arkumu OAI Simplified METS"
-    ET.SubElement(agent, ET.QName(METS_NS, "note")).text = "Generated by Arkumu DB-backed OAI profile"
+    # Note: metsHdr removed per Rosetta requirements
 
-    dmd_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "dmdSec"), {"ID": "simplified-dmd"})
+    dmd_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "dmdSec"), {"ID": "ie-dmd"})
     md_wrap = ET.SubElement(dmd_sec, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "DC"})
     xml_data = ET.SubElement(md_wrap, ET.QName(METS_NS, "xmlData"))
     dc_record = ET.SubElement(xml_data, ET.QName(DC_NS, "record"))
@@ -1133,19 +1123,17 @@ def _build_simplified_mets_from_project(
     rights_elem = ET.SubElement(dc_record, ET.QName(DC_NS, "rights"))
     rights_elem.text = SIMPLIFIED_LICENSE_NOTE
 
-    ie_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "simplified-amd"})
-    tech_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "techMD"), {"ID": "simplified-amd-tech"})
+    ie_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "ie-amd"})
+    tech_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "techMD"), {"ID": "ie-amd-tech"})
     tech_wrap = ET.SubElement(tech_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
     tech_xml = ET.SubElement(tech_wrap, ET.QName(METS_NS, "xmlData"))
     tech_dnx = _create_dnx_element(tech_xml, "dnx")
     general_section = _create_dnx_element(tech_dnx, "section", {"id": "generalRepCharacteristics"})
     general_record = _create_dnx_element(general_section, "record")
     _create_dnx_element(general_record, "key", {"id": "usageType"}, "VIEW")
-    rights_section = _create_dnx_element(tech_dnx, "section", {"id": "accessRightsPolicy"})
-    rights_record = _create_dnx_element(rights_section, "record")
-    _create_dnx_element(rights_record, "key", {"id": "policyId"}, "graph-managed")
+    # Note: accessRightsPolicy removed - Rosetta creates them automatically
 
-    rights_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "rightsMD"), {"ID": "simplified-amd-rights"})
+    rights_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "rightsMD"), {"ID": "ie-amd-rights"})
     rights_wrap = ET.SubElement(
         rights_md,
         ET.QName(METS_NS, "mdWrap"),
@@ -1187,9 +1175,35 @@ def _build_simplified_mets_from_project(
             )
         source_xml.append(rdf_elem)
 
+    # Try to use pre-computed RDF/XML from ProjectIndex for better performance
+    # Skip precomputed if force_live_rdf is True (for GetRecord previews)
+    project_index = getattr(resource, "project_index", None) if not force_live_rdf else None
+    precomputed_canonical = getattr(project_index, "canonical_rdf_xml", "") if project_index else ""
+    precomputed_institutional = getattr(project_index, "institutional_rdf_xml", "") if project_index else ""
+
+    # Also check for batch-fetched graph_data on the project (from tailored endpoint)
+    # Skip prefetched if force_live_rdf is True
+    prefetched_graph = getattr(project, "graph_data", None) if not force_live_rdf else None
+
+    _t1 = _time.perf_counter()
+
+    # Fetch graph data once, reuse for both canonical and institutional RDF
+    project_graphs = None
+    if not precomputed_canonical or not precomputed_institutional:
+        org_code = resource.organization.code if resource.organization else None
+        if org_code:
+            project_graphs = get_project_graphs(str(resource.id), org_code)
+
     try:
-        rdf_service = CanonicalGraphService(org_code=resource.organization.code if resource.organization else None)
-        canonical_rdf = build_rdf_graph(resource, graph_service=rdf_service)
+        if precomputed_canonical:
+            canonical_rdf = ET.fromstring(precomputed_canonical.encode("utf-8"))
+        elif prefetched_graph:
+            canonical_rdf = build_rdf_graph(resource, graph_data=prefetched_graph)
+        elif project_graphs:
+            graph_data = project_graphs.to_graph_data()
+            canonical_rdf = build_rdf_graph(resource, graph_data=graph_data)
+        else:
+            raise ValueError("No graph data available for canonical RDF")
         _append_rdf_md(
             "simplified-rdf-canonical",
             "RDF",
@@ -1199,7 +1213,18 @@ def _build_simplified_mets_from_project(
     except Exception:
         logger.exception("Failed to build canonical RDF metadata for %s", getattr(resource, "uri", "unknown"))
 
-    institutional_rdf = _build_institutional_rdf_element(resource, require_org_opt_in=False)
+    try:
+        if precomputed_institutional:
+            institutional_rdf = ET.fromstring(precomputed_institutional.encode("utf-8"))
+        elif project_graphs:
+            graph_data = project_graphs.to_graph_data()
+            institutional_rdf = build_rdf_graph(resource, graph_data=graph_data, use_institutional_predicates=True)
+        else:
+            raise ValueError("No graph data available for institutional RDF")
+    except Exception:
+        logger.exception("Failed to build institutional RDF for %s", getattr(resource, "uri", "unknown"))
+        institutional_rdf = None
+
     if institutional_rdf is not None:
         _append_rdf_md(
             "simplified-rdf-institutional",
@@ -1213,37 +1238,87 @@ def _build_simplified_mets_from_project(
             getattr(resource, "uri", "unknown"),
         )
 
+    _t2 = _time.perf_counter()
+
     harvestable_objects = [
         obj for obj in project.digital_objects
         if obj.harvestable and obj.preferred_location
     ]
 
-    file_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "fileSec"))
-    file_grp = ET.SubElement(file_sec, ET.QName(METS_NS, "fileGrp"), {"USE": "SIMPLIFIED"})
+    # Add representation amdSec with preservationType (Rosetta requirement)
+    rep_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": "rep1-amd"})
+    rep_tech = ET.SubElement(rep_amd, ET.QName(METS_NS, "techMD"), {"ID": "rep1-amd-tech"})
+    rep_wrap = ET.SubElement(rep_tech, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    rep_xml = ET.SubElement(rep_wrap, ET.QName(METS_NS, "xmlData"))
+    rep_dnx = _create_dnx_element(rep_xml, "dnx")
+    rep_section = _create_dnx_element(rep_dnx, "section", {"id": "generalRepCharacteristics"})
+    rep_record = _create_dnx_element(rep_section, "record")
+    _create_dnx_element(rep_record, "key", {"id": "preservationType"}, "PRESERVATION_MASTER")
+    _create_dnx_element(rep_record, "key", {"id": "usageType"}, "VIEW")
 
-    struct_map = ET.SubElement(mets_root, ET.QName(METS_NS, "structMap"), {"TYPE": "physical"})
+    # Add per-file amdSec with fixity and fileOriginalPath
+    file_amd_sections: List[ET._Element] = []
+    for index, obj in enumerate(harvestable_objects, start=1):
+        file_id = f"fid1-{index}"
+        file_amd = ET.SubElement(mets_root, ET.QName(METS_NS, "amdSec"), {"ID": f"{file_id}-amd"})
+        file_tech = ET.SubElement(file_amd, ET.QName(METS_NS, "techMD"), {"ID": f"{file_id}-amd-tech"})
+        file_wrap = ET.SubElement(file_tech, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+        file_xml = ET.SubElement(file_wrap, ET.QName(METS_NS, "xmlData"))
+        file_dnx = _create_dnx_element(file_xml, "dnx")
+
+        # generalFileCharacteristics with fileOriginalPath
+        general_keys: List[tuple] = []
+        label_value = obj.display_label or obj.file_name
+        if label_value:
+            general_keys.append(("label", label_value))
+        if obj.file_name:
+            general_keys.append(("fileOriginalName", obj.file_name))
+        original_path = getattr(obj, "path", None) or getattr(obj, "storage_key", None)
+        if original_path:
+            general_keys.append(("fileOriginalPath", original_path))
+        if obj.content_type:
+            general_keys.append(("fileMIMEType", obj.content_type))
+        if obj.size_bytes is not None:
+            general_keys.append(("fileSizeBytes", str(obj.size_bytes)))
+
+        if general_keys:
+            general_section = _create_dnx_element(file_dnx, "section", {"id": "generalFileCharacteristics"})
+            general_record = _create_dnx_element(general_section, "record")
+            for key_id, value in general_keys:
+                _create_dnx_element(general_record, "key", {"id": key_id}, value)
+
+        # fileFixity with checksum
+        checksum_algorithm, checksum_value = obj.checksum_tuple()
+        checksum_label = obj.checksum_label() if checksum_algorithm else None
+        if checksum_value:
+            fixity_type = _normalize_fixity_type(checksum_label or "SHA-256")
+            fixity_section = _create_dnx_element(file_dnx, "section", {"id": "fileFixity"})
+            fixity_record = _create_dnx_element(fixity_section, "record")
+            _create_dnx_element(fixity_record, "key", {"id": "fixityType"}, fixity_type)
+            _create_dnx_element(fixity_record, "key", {"id": "fixityValue"}, checksum_value)
+
+        file_amd_sections.append((file_id, file_amd))
+
+    file_sec = ET.SubElement(mets_root, ET.QName(METS_NS, "fileSec"))
+    file_grp = ET.SubElement(file_sec, ET.QName(METS_NS, "fileGrp"), {"ID": "rep1", "ADMID": "rep1-amd"})
+
+    struct_map = ET.SubElement(mets_root, ET.QName(METS_NS, "structMap"), {"ID": "structMap-1", "TYPE": "LOGICAL"})
     project_label = record.title or getattr(resource, "name", None) or identifier_value or "Project"
+    # Note: TYPE must be 'FILE' per Rosetta METS schema requirements
     struct_root = ET.SubElement(
         struct_map,
         ET.QName(METS_NS, "div"),
-        {"TYPE": "project", "LABEL": project_label},
+        {"TYPE": "FILE", "LABEL": project_label},
     )
 
     for index, obj in enumerate(harvestable_objects, start=1):
         href = _escape_flocat_href(obj.preferred_location)
         if not href:
             continue
-        file_id = f"simplified-file-{index}"
-        file_attrs: Dict[str, str] = {"ID": file_id, "ADMID": "simplified-amd"}
-        if obj.content_type:
-            file_attrs["MIMETYPE"] = obj.content_type
-        if obj.size_bytes:
-            file_attrs["SIZE"] = str(obj.size_bytes)
-        if obj.checksum:
-            file_attrs["CHECKSUM"] = obj.checksum
-        checksum_type = obj.checksum_label()
-        if checksum_type:
-            file_attrs["CHECKSUMTYPE"] = checksum_type
+        file_id = f"fid1-{index}"
+        # Note: CHECKSUM, CHECKSUMTYPE, MIMETYPE, SIZE removed per Rosetta requirements
+        # Fixity info is in per-file DNX amdTech section
+        file_attrs: Dict[str, str] = {"ID": file_id, "ADMID": f"{file_id}-amd"}
 
         file_element = ET.SubElement(file_grp, ET.QName(METS_NS, "file"), file_attrs)
         flocat_attrs = {
@@ -1261,13 +1336,24 @@ def _build_simplified_mets_from_project(
             struct_root,
             ET.QName(METS_NS, "div"),
             {
-                "TYPE": "item",
+                "TYPE": "FILE",
                 "LABEL": file_label,
             },
         )
         ET.SubElement(file_div, ET.QName(METS_NS, "fptr"), {"FILEID": file_id})
 
+    _t3 = _time.perf_counter()
+    logger.info(
+        "METS timing %s: setup=%.3fs, rdf=%.3fs, files=%.3fs, total=%.3fs",
+        getattr(resource, "uri", "?")[-25:],
+        _t1 - _t0,
+        _t2 - _t1,
+        _t3 - _t2,
+        _t3 - _t0,
+    )
     return mets_root
+
+
 def _build_mets_from_project(
     project: OAIProject,
     resource: Resource,
@@ -1540,9 +1626,9 @@ def _build_mets_from_project(
                 general_keys.append(("label", label_value))
             if obj.file_name:
                 general_keys.append(("fileOriginalName", obj.file_name))
-            storage_path = _original_storage_path(obj)
-            if storage_path:
-                general_keys.append(("fileOriginalPath", storage_path))
+            original_path = getattr(obj, "path", None) or getattr(obj, "storage_key", None)
+            if original_path:
+                general_keys.append(("fileOriginalPath", original_path))
             if obj.content_type:
                 general_keys.append(("fileMIMEType", obj.content_type))
             if obj.size_bytes is not None:
@@ -1941,15 +2027,24 @@ def _build_mets_from_project(
                     },
                 )
                 ET.SubElement(file_div, ET.QName(METS_NS, "fptr"), {"FILEID": file_info["file_id"]})
+
     return mets_root
+
+
 def _build_metadata_element(
     resource: Resource,
     metadata_prefix: str,
     project_hint: Optional[OAIProject] = None,
     *,
     request: Optional[HttpRequest] = None,
+    skip_validation: bool = False,
+    force_live_rdf: bool = False,
 ) -> ET._Element:
-    """Build metadata element for different formats."""
+    """Build metadata element for different formats.
+
+    Args:
+        force_live_rdf: If True, always fetch RDF on-demand (for GetRecord previews).
+    """
     metadata = ET.Element("metadata")
 
     projects = _candidate_projects_for_resource(resource, primary_project=project_hint)
@@ -1968,13 +2063,15 @@ def _build_metadata_element(
         dc_root = _append_dc_metadata(metadata, dc_payload)
         _append_arkumu_identifier(dc_root, resource)
     elif metadata_prefix == "mets":
+        import time
         simplified_mode = _tailored_mode_enabled()
         for project in projects:
             if not project.harvestable:
                 continue
 
+            t_mets_start = time.time()
             if simplified_mode:
-                mets_root = _build_simplified_mets_from_project(project, resource, request=request)
+                mets_root = _build_simplified_mets_from_project(project, resource, request=request, force_live_rdf=force_live_rdf)
             else:
                 dc_payload_core = _build_dc_payload_from_project(
                     project,
@@ -1989,13 +2086,34 @@ def _build_metadata_element(
                     dc_source_payloads=dc_payload_source,
                     request=request,
                 )
+            t_mets_gen = time.time()
+
+            if skip_validation:
+                # Skip validation for tailored endpoint - we control generation
+                logger.info(
+                    "METS %s: gen=%.3fs (validation skipped)",
+                    getattr(resource, "uri", "?")[-20:],
+                    t_mets_gen - t_mets_start,
+                )
+                mets_bytes = ET.tostring(mets_root, encoding="utf-8")
+                metadata.append(ET.fromstring(mets_bytes))
+                break
 
             candidate_wrapper = ET.Element("metadata")
             candidate_wrapper.append(ET.fromstring(ET.tostring(mets_root)))
 
+            t_parse = time.time()
             validation = rosetta_mets_validator.validate_metadata_element(
                 candidate_wrapper,
                 resource_uri=getattr(resource, "uri", None),
+            )
+            t_valid = time.time()
+            logger.info(
+                "METS %s: gen=%.3fs, parse=%.3fs, valid=%.3fs",
+                getattr(resource, "uri", "?")[-20:],
+                t_mets_gen - t_mets_start,
+                t_parse - t_mets_gen,
+                t_valid - t_parse,
             )
 
             if not validation.is_valid:
