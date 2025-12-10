@@ -146,12 +146,16 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                 is_public_approved=True,
             ).exclude(title__isnull=True).exclude(title='')
 
-            # Get unique institution labels
-            all_institutions = sorted(set(
-                base_qs.exclude(institution_label='')
-                .values_list('institution_label', flat=True)
-                .distinct()
-            ))
+            # Get unique institutions from org_code mapping
+            from arkumu.catalog.models import ProjectIndex
+            org_code_to_name = ProjectIndex.ORG_CODE_TO_NAME
+
+            institution_set = set()
+            for code in base_qs.values_list('org_code', flat=True).distinct():
+                if code and code in org_code_to_name:
+                    institution_set.add(org_code_to_name[code])
+
+            all_institutions = sorted(institution_set)
 
             # Get unique categories (flatten ArrayField) - already human-readable labels
             all_categories_raw = set()
