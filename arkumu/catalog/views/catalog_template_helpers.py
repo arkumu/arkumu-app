@@ -24,7 +24,7 @@ class CatalogTemplateHelperMixin:
     """
 
     def render_results_container(self, request, results: List[Dict], pagination_context: Dict,
-                                 query: str = "", total_results: int = 0, orga_code: str = "") -> str:
+                                 query: str = "", total_results: int = 0, org_code: str = "") -> str:
         """
         Render unified results container with all sub-components.
 
@@ -41,7 +41,7 @@ class CatalogTemplateHelperMixin:
         context = {
             'results': results,
             'query': query,
-            'orga_code': orga_code,
+            'org_code': org_code,
             'total_results': total_results,
             'start_result': pagination_context.get('start_result', 0),
             'end_result': pagination_context.get('end_result', 0),
@@ -115,7 +115,7 @@ class CatalogTemplateHelperMixin:
         return f'<div class="text-center py-4 text-arkumu-dark theme-dark:text-arkumu-light">Suche nach "{query}" - {total_results} Projekte gefunden</div>'
 
     def build_search_response(self, request, results: List[Dict], pagination_context: Dict,
-                              query: str = "", total_results: int = 0, orga_code: str = "") -> HttpResponse:
+                              query: str = "", total_results: int = 0, org_code: str = "") -> HttpResponse:
         """
         Build simple search response with unified results container.
 
@@ -138,7 +138,7 @@ class CatalogTemplateHelperMixin:
             pagination_context=pagination_context,
             query=query,
             total_results=total_results,
-            orga_code=orga_code,
+            org_code=org_code,
         )
 
         logger.info(
@@ -148,10 +148,10 @@ class CatalogTemplateHelperMixin:
         response = HttpResponse(html)
 
         # Add URL push for browser history
-        if query and not orga_code:
+        if query and not org_code:
             response['HX-Push-Url'] = f"/catalog/browse/?query={query}"
-        elif orga_code:
-            response['HX-Push-Url'] = f"/catalog/browse/?orga_code={orga_code}"
+        elif org_code:
+            response['HX-Push-Url'] = f"/catalog/browse/?org_code={org_code}"
         else:
             response['HX-Push-Url'] = "/catalog/browse/"
 

@@ -31,7 +31,7 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
         start_time = time.time()
 
         query = request.GET.get('query', '').strip()
-        orga_code = request.GET.get('orga_code', "").strip() or None
+        org_code = request.GET.get('org_code', "").strip() or None
         query = query or None
 
         # Use centralized mapping from ProjectIndex model
@@ -39,20 +39,20 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
         reverse_orga_mapping = ProjectIndex.NAME_TO_ORG_CODE
 
         # Convert to display name for UI, and short code for filtering
-        if orga_code in orga_mapping:
+        if org_code in orga_mapping:
             # Short code provided (e.g., "fuk")
-            orga_display = orga_mapping[orga_code]
-            orga_code_short = orga_code
-        elif orga_code in reverse_orga_mapping:
+            orga_display = orga_mapping[org_code]
+            org_code_short = org_code
+        elif org_code in reverse_orga_mapping:
             # Full name provided (e.g., "Folkwang Universität der Künste") - backwards compat
-            orga_display = orga_code
-            orga_code_short = reverse_orga_mapping[orga_code]
+            orga_display = org_code
+            org_code_short = reverse_orga_mapping[org_code]
         else:
             # Unknown, use as-is
-            orga_display = orga_code
-            orga_code_short = orga_code
+            orga_display = org_code
+            org_code_short = org_code
 
-        orga_code = orga_code_short
+        org_code = org_code_short
         try:
             page = max(int(request.GET.get('page', 1)), 1)
         except ValueError:
@@ -68,14 +68,14 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
 
         try:
             # For requests without query, return empty results immediately
-            if not query and not orga_code:
+            if not query and not org_code:
                 logger.info("FAST_PATH: No query provided, returning empty results")
                 if is_htmx:
                     return self.build_empty_search_response(request, query)
                 # For initial page load without query, return empty page
                 context = {
                     'query': None,
-                    'orga_code': None,
+                    'org_code': None,
                     'results': [],
                     'pagination': {},
                     'total_results': 0,
@@ -86,7 +86,7 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             search_service = ProjectCardSearchService()
             cards, total_results = search_service.search_cards(
                 query,
-                org_code=orga_code,
+                org_code=org_code,
                 page=page,
                 page_size=self.ITEMS_PER_PAGE,
             )
@@ -145,14 +145,14 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
                     pagination_context=pagination_context,
                     query=query,
                     total_results=total_results,
-                    orga_code=orga_code,
+                    org_code=org_code,
                 )
                 return self.add_search_performance_headers(response, query, total_results, processing_time)
 
             # For regular requests, return full page
             context = {
                 'query': query,
-                'orga_code': orga_display or orga_code,
+                'org_code': orga_display or org_code,
                 'results': cards,
                 'pagination': pagination_context,
                 # Also include individual pagination values for template
