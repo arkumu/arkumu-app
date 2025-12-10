@@ -59,11 +59,6 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             page = 1
         is_htmx = request.headers.get('HX-Request') is not None
 
-        # Get user's organization (optional for cross-institutional queries)
-        org_code = None
-        if hasattr(request.user, 'organization') and request.user.organization:
-            org_code = request.user.organization.code
-
         logger.info(f"🔍 CATALOG_SEARCH: Query: '{query}', Page: {page}, Org: {org_code}, HTMX: {is_htmx}")
 
         try:
