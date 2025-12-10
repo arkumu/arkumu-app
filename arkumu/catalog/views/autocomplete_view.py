@@ -6,7 +6,6 @@ from django.template.loader import render_to_string
 
 from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.catalog.models import ProjectIndex
-from arkumu.metadata.models import PublicAccessLevel
 
 
 class FilterAutocompleteView(GeneralLoginRequiredMixin, View):
@@ -69,14 +68,8 @@ class FilterAutocompleteView(GeneralLoginRequiredMixin, View):
         return filtered[:self.MAX_RESULTS]
 
     def _get_institution_options(self, query, selected):
-        # Hardcoded institutions list
-        all_institutions = [
-            "Folkwang Universität der Künste",
-            "Hochschule für Musik Detmold",
-            "Hochschule für Musik und Tanz Köln",
-            "Kunsthochschule für Medien Köln",
-            "Robert Schumann Hochschule Düsseldorf",
-        ]
+        # Get institutions from centralized model mapping
+        all_institutions = ProjectIndex.get_all_institution_labels()
 
         filtered = [
             i for i in all_institutions

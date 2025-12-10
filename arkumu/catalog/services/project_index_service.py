@@ -586,7 +586,7 @@ class ProjectIndexService:
         self,
         *,
         query: Optional[str] = None,
-        organ_code: Optional[str] = None,
+        org_codes: Optional[List[str]] = None,
         categories: Optional[List[str]] = None,
         actors: Optional[List[str]] = None,
         catchphrases: Optional[List[str]] = None,
@@ -594,12 +594,11 @@ class ProjectIndexService:
         year_to: Optional[int] = None,
         force_refresh: bool = False,
     ) -> List[Dict[str, Any]]:
-        #Why on earth would anyone decide otherwise?
-        # self.backend ="db"
-
         """Return card dictionaries for projects matching the filters."""
         if self.backend == "snapshot":
             records = self._get_all_records(force_refresh=force_refresh)
+            # Snapshot backend only supports single org_code
+            organ_code = org_codes[0] if org_codes else None
             filtered_records = self._filter_records(
                 records,
                 query=query,
@@ -607,16 +606,16 @@ class ProjectIndexService:
             )
             cards = [record.to_card_dict() for record in filtered_records]
             logger.info(
-                "ProjectIndexService[snapshot]: materialized %d cards (query='%s', organ_code='%s')",
+                "ProjectIndexService[snapshot]: materialized %d cards (query='%s', org_codes='%s')",
                 len(cards),
                 (query or "").strip(),
-                (organ_code or "").strip(),
+                org_codes,
             )
             return cards
 
         if self.backend == "db":
             # Use Redis cache when no filters applied
-            has_filters = query or organ_code or categories or actors or catchphrases or year_from or year_to
+            has_filters = query or org_codes or categories or actors or catchphrases or year_from or year_to
             if not has_filters and not force_refresh:
                 cached = cache.get(_CARDS_CACHE_KEY)
                 if cached:
@@ -628,16 +627,20 @@ class ProjectIndexService:
                 is_public_approved=True,
             ).exclude(title__isnull=True).exclude(title='')
 
-            if organ_code:
-                base_qs = base_qs.filter(org_code__iexact=organ_code.strip())
+            # Filter by org_codes (supports multiple institutions)
+            if org_codes:
+                base_qs = base_qs.filter(org_code__in=[c.lower().strip() for c in org_codes])
 
             if query:
                 normalized_query = query.strip()
-                base_qs = base_qs.filter(
-                    Q(title__icontains=normalized_query)
-                    | Q(subtitle__icontains=normalized_query)
-                    | Q(institution_label__icontains=normalized_query)
-                )
+                query_lower = normalized_query.lower()
+                # Build query filter - search title, subtitle, and match org_code by institution name
+                q_filter = Q(title__icontains=normalized_query) | Q(subtitle__icontains=normalized_query)
+                # Check if query matches any institution name and add org_code filter
+                for org_code, inst_name in ProjectIndex.ORG_CODE_TO_NAME.items():
+                    if query_lower in inst_name.lower():
+                        q_filter |= Q(org_code=org_code)
+                base_qs = base_qs.filter(q_filter)
 
             # Filter by categories (ArrayField overlap)
             if categories:
@@ -665,10 +668,10 @@ class ProjectIndexService:
             valid_paths = _get_valid_preview_paths()
             cards = [entry.to_card_dict(valid_preview_paths=valid_paths) for entry in base_qs.order_by("title")]
             logger.info(
-                "ProjectIndexService[db]: materialized %d cards (query='%s', organ_code='%s', categories=%s, actors=%s, catchphrases=%s, year_from=%s, year_to=%s)",
+                "ProjectIndexService[db]: materialized %d cards (query='%s', org_codes=%s, categories=%s, actors=%s, catchphrases=%s, year_from=%s, year_to=%s)",
                 len(cards),
                 (query or "").strip(),
-                (organ_code or "").strip(),
+                org_codes,
                 categories,
                 actors,
                 catchphrases,
@@ -683,7 +686,8 @@ class ProjectIndexService:
 
             # Apply simple filters on top of graph-derived cards.
             normalized_query = (query or "").strip().lower()
-            normalized_organ = (organ_code or "").strip().lower()
+            # Convert org_codes to institution names for matching
+            org_code_set = set(c.lower().strip() for c in (org_codes or []))
 
             def _matches(card: Dict[str, Any]) -> bool:
                 if normalized_query:
@@ -707,18 +711,20 @@ class ProjectIndexService:
                     ).lower()
                     if normalized_query not in haystack:
                         return False
-                if normalized_organ:
-                    instit = (card.get("institution") or "").lower()
-                    if normalized_organ not in instit:
+                if org_code_set:
+                    # Match institution name against org_code mapping
+                    card_inst = (card.get("institution") or "").strip()
+                    card_org = ProjectIndex.NAME_TO_ORG_CODE.get(card_inst, "").lower()
+                    if card_org not in org_code_set:
                         return False
                 return True
 
             filtered = [card for card in cards if _matches(card)]
             logger.info(
-                "ProjectIndexService[graph]: materialized %d cards (query='%s', organ_code='%s')",
+                "ProjectIndexService[graph]: materialized %d cards (query='%s', org_codes=%s)",
                 len(filtered),
                 (query or "").strip(),
-                (organ_code or "").strip(),
+                org_codes,
             )
             return filtered
 

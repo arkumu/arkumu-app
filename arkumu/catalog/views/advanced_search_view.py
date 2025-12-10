@@ -59,14 +59,17 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             else:
                 # Apply filters via indexed query
                 # Map institution labels to org_codes for filtering
-                org_code = None
+                org_codes = None
                 if institutions:
-                    # For now, use the first institution's org code
-                    org_code = self._institution_label_to_org_code(institutions[0])
+                    org_codes = [
+                        ProjectIndex.label_to_org_code(label)
+                        for label in institutions
+                        if ProjectIndex.label_to_org_code(label)
+                    ]
 
                 filtered_cards = index_service.get_cards(
                     query=query,
-                    organ_code=org_code,
+                    org_codes=org_codes if org_codes else None,
                     categories=categories if categories else None,
                     actors=actors if actors else None,
                     catchphrases=schlagworte if schlagworte else None,
@@ -116,17 +119,6 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             logger.exception("ADVANCED_SEARCH_ERROR: %s", e)
             return render(request, 'catalog/error.html', {'error': str(e)})
 
-    def _institution_label_to_org_code(self, label: str) -> str:
-        """Map institution label to org code."""
-        mapping = {
-            "Folkwang Universität der Künste": "fuk",
-            "Robert Schumann Hochschule Düsseldorf": "rsh",
-            "Kunsthochschule für Medien Köln": "khm",
-            "Hochschule für Musik Detmold": "det",
-            "Hochschule für Musik und Tanz Köln": "hmt",
-        }
-        return mapping.get(label, label.lower()[:3])
-
     def _get_dropdown_options(
         self,
         selected_institutions: List[str],
@@ -146,14 +138,8 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                 is_public_approved=True,
             ).exclude(title__isnull=True).exclude(title='')
 
-            # Hardcoded institutions list
-            all_institutions = [
-                "Folkwang Universität der Künste",
-                "Hochschule für Musik Detmold",
-                "Hochschule für Musik und Tanz Köln",
-                "Kunsthochschule für Medien Köln",
-                "Robert Schumann Hochschule Düsseldorf",
-            ]
+            # Get institutions from centralized model mapping
+            all_institutions = ProjectIndex.get_all_institution_labels()
 
             # Get unique categories (flatten ArrayField) - already human-readable labels
             all_categories_raw = set()

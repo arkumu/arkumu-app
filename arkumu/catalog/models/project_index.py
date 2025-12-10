@@ -32,6 +32,19 @@ class ProjectIndex(models.Model):
         "hmt": "Hochschule für Musik und Tanz Köln",
     }
 
+    # Reverse mapping: institution label -> org_code
+    NAME_TO_ORG_CODE = {v: k for k, v in ORG_CODE_TO_NAME.items()}
+
+    @classmethod
+    def get_all_institution_labels(cls) -> List[str]:
+        """Return sorted list of all institution labels for dropdowns."""
+        return sorted(cls.ORG_CODE_TO_NAME.values())
+
+    @classmethod
+    def label_to_org_code(cls, label: str) -> Optional[str]:
+        """Map institution label to org_code."""
+        return cls.NAME_TO_ORG_CODE.get(label)
+
     project_resource = models.OneToOneField(
         Resource,
         on_delete=models.CASCADE,
