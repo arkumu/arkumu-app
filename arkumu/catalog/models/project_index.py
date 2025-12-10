@@ -8,6 +8,7 @@ from django.db import models
 from django.utils import timezone
 
 from arkumu.metadata.models.resource import PublicAccessLevel, Resource
+from arkumu.catalog.models.preview_imgs import PreviewImages
 
 if TYPE_CHECKING:
     from arkumu.projects import ProjectRecord
@@ -164,7 +165,10 @@ class ProjectIndex(models.Model):
         """Materialize the stored projection into the public card payload."""
 
         def _preferred_image() -> str:
-            # Use black placeholder - no preview images available
+            # Return first digital_object_path that exists in PreviewImages
+            for path in (self.digital_object_paths or []):
+                if path and PreviewImages.objects.filter(path=path).exists():
+                    return path
             return ""
 
         card = {
