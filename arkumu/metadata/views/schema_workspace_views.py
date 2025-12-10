@@ -3967,24 +3967,22 @@ class DeleteEntityView(LoginRequiredMixin, View):
             object_triples_deleted,
         )
 
-        # Return fresh dataset panel with success message
-        field_metadata = service.get_field_metadata(dataset_name)
-        field_metadata, join_field_map = service.augment_field_metadata_with_joins(
-            dataset_name,
-            field_metadata,
-        )
-        form = DatasetEntityForm(field_metadata=field_metadata)
-        _remove_join_source_fields(form, join_field_map)
-
-        success_message = f"Entity '{entity_label or entity_uri}' wurde erfolgreich geloscht."
-
-        html = _render_dataset_panel(
-            request,
-            service=service,
-            dataset_name=dataset_name,
-            form=form,
-            field_metadata=field_metadata,
-            join_field_map=join_field_map,
-            success_message=success_message,
-        )
-        return HttpResponse(html)
+        # Return simple success message with refresh button
+        refresh_url = reverse("metadata:entity_workspace_dataset", args=[mapping_id])
+        success_html = f'''
+        <div class="card bg-base-100 border border-base-300 shadow-sm">
+          <div class="card-body">
+            <div class="alert alert-success">
+              <span>Entity '{entity_label or entity_uri}' wurde erfolgreich geloscht.</span>
+            </div>
+            <button type="button"
+                    class="btn btn-primary btn-sm mt-4"
+                    hx-get="{refresh_url}?dataset={dataset_name}"
+                    hx-target="#dataset-panel"
+                    hx-swap="innerHTML">
+              Weiter arbeiten
+            </button>
+          </div>
+        </div>
+        '''
+        return HttpResponse(success_html)
