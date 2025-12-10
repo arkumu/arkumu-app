@@ -704,6 +704,80 @@ def _attach_s3_metadata(
             setattr(link, "s3_key_preview", s3_key_preview)
 
 
+def _build_project_row_context_lightweight(
+    resource: Resource,
+    *,
+    org_code: str,
+    is_s3_org: bool,
+    label_lookup: Optional[Dict[Any, str]] = None,
+    publication_by_id: Optional[Dict[Any, OAIProjectPublication]] = None,
+    harvestable_project_ids: Optional[Set[int]] = None,
+) -> dict[str, Any]:
+    """Lightweight row builder that skips expensive assembler/builder calls.
+
+    Uses pre-computed harvestable_project_ids instead of running the full
+    assembler pipeline for each project. Much faster for listing views.
+    """
+    prefetched_links: List[OAIProjectMediaLink] = list(getattr(resource, "prefetched_media_links", []) or [])
+    for link in prefetched_links:
+        link.digital_object_display_label = _resource_display_label(  # type: ignore[attr-defined]
+            getattr(link, "digital_object", None),
+            fallback="Untitled digital object",
+            label_lookup=label_lookup,
+        )
+
+    publication = None
+    if publication_by_id is not None:
+        publication = publication_by_id.get(resource.id)
+
+    project_uri = getattr(resource, "uri", "") or ""
+
+    # Use pre-computed harvestable status
+    has_harvestable = False
+    if harvestable_project_ids is not None:
+        has_harvestable = resource.id in harvestable_project_ids
+
+    # For S3 orgs, check if any link has S3 file
+    if is_s3_org:
+        has_harvestable = any(
+            getattr(link, "has_s3_file", False) for link in prefetched_links
+        )
+
+    # Mark individual links as harvestable based on S3 status
+    for link in prefetched_links:
+        if is_s3_org:
+            setattr(link, "is_harvestable", getattr(link, "has_s3_file", False))
+        else:
+            # For non-S3 orgs, link is harvestable if not stale
+            setattr(link, "is_harvestable", not getattr(link, "is_stale", False))
+
+    row = {
+        "resource": resource,
+        "project_uri": project_uri,
+        "project_label": _resource_display_label(resource, fallback="Untitled project", label_lookup=label_lookup),
+        "links": prefetched_links,
+        "total_links": len(prefetched_links),
+        "selected_org_code": org_code,
+        "builder_error": False,
+        "graph_only_uris": (),
+        "curated_missing_uris": (),
+        "warnings": (),
+        "harvestable_count": sum(1 for link in prefetched_links if getattr(link, "is_harvestable", False)),
+        "has_harvestable_files": has_harvestable,
+        "curated_selection": None,
+        "oai_identifier": _build_identifier(project_uri),
+        "project_subtitle": "",
+        "project_year_range": "",
+        "project_categories": [],
+        "project_institution": org_code.upper() if org_code else "",
+        "oai_is_approved": bool(getattr(publication, "is_approved", False)),
+        "oai_approved_at": getattr(publication, "approved_at", None),
+        "oai_approved_by": getattr(publication, "approved_by", None),
+    }
+
+    return row
+
+
 def _build_project_row_context(
     resource: Resource,
     *,
@@ -714,6 +788,7 @@ def _build_project_row_context(
     label_lookup: Optional[Dict[Any, str]] = None,
     publication_by_id: Optional[Dict[Any, OAIProjectPublication]] = None,
 ) -> dict[str, Any]:
+    """Full row builder with assembler - use for single project views or when full data needed."""
     prefetched_links: List[OAIProjectMediaLink] = list(getattr(resource, "prefetched_media_links", []) or [])
     for link in prefetched_links:
         link.digital_object_display_label = _resource_display_label(  # type: ignore[attr-defined]
@@ -851,6 +926,7 @@ def _build_media_links_panel_context(
     oai_publish_filter: str = "all",
     harvestable_filter: str = "all",
     search_query: str = "",
+    skip_row_building: bool = False,
 ) -> dict[str, Any]:
     is_s3_org = _is_s3_org(organization)
     project_scope = _project_scope_or_all_entities(organization)
@@ -952,8 +1028,6 @@ def _build_media_links_panel_context(
     project_resources: List[Resource] = list(page_obj.object_list)
     page_obj.object_list = project_resources
 
-    builder = OAIProjectBuilderTailored()
-    assembler = OAIProjectAssembler()
     rows: List[dict[str, Any]] = []
     builder_errors: List[str] = []
 
@@ -975,18 +1049,19 @@ def _build_media_links_panel_context(
         publication_qs = OAIProjectPublication.objects.filter(project_id__in=[p.id for p in project_resources])
         publication_by_id = {pub.project_id: pub for pub in publication_qs}
 
+    # Use pre-computed harvestable IDs for lightweight row building
+    harvestable_ids = s3_harvestable_ids if is_s3_org else curated_harvestable_ids
+
     for project_resource in project_resources:
-        row = _build_project_row_context(
+        # Use lightweight builder for listing - skips expensive assembler calls
+        row = _build_project_row_context_lightweight(
             project_resource,
-            builder=builder,
-            assembler=assembler,
             org_code=organization.code or "",
             is_s3_org=is_s3_org,
             label_lookup=label_lookup,
             publication_by_id=publication_by_id,
+            harvestable_project_ids=harvestable_ids,
         )
-        if row["builder_error"]:
-            builder_errors.append(project_resource.uri)
         rows.append(row)
 
     return {
