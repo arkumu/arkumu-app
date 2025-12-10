@@ -1238,6 +1238,12 @@ def _build_simplified_mets_from_project(
             getattr(resource, "uri", "unknown"),
         )
 
+    # Add digiprovMD section (required by Rosetta METS schema)
+    digiprov_md = ET.SubElement(ie_amd, ET.QName(METS_NS, "digiprovMD"), {"ID": "ie-amd-digiprov"})
+    digiprov_wrap = ET.SubElement(digiprov_md, ET.QName(METS_NS, "mdWrap"), {"MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"})
+    digiprov_xml = ET.SubElement(digiprov_wrap, ET.QName(METS_NS, "xmlData"))
+    _create_dnx_element(digiprov_xml, "dnx")
+
     _t2 = _time.perf_counter()
 
     harvestable_objects = [
