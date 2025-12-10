@@ -206,6 +206,7 @@ class ProjectIndex(models.Model):
             "title": self.title or "",
             "subtitle": self.subtitle or "",
             "image": _preferred_image(),
+            "org_code": self.org_code,
             "institution": self.ORG_CODE_TO_NAME.get(self.org_code, self.org_code),
             "categories": list(self.category_labels or []),
             "year_range": self.year_range or "",

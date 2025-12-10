@@ -6,6 +6,7 @@ from django.template.loader import render_to_string
 
 from arkumu.users.mixins import GeneralLoginRequiredMixin
 from arkumu.catalog.models import ProjectIndex
+from arkumu.metadata.models import PublicAccessLevel
 
 
 class FilterAutocompleteView(GeneralLoginRequiredMixin, View):

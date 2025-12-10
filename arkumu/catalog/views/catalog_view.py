@@ -10,6 +10,7 @@ from typing import List
 
 from .catalog_template_helpers import CatalogTemplateHelperMixin
 from arkumu.users.mixins import GeneralLoginRequiredMixin
+from arkumu.catalog.models import ProjectIndex
 from ..services.wikidata_service import WikidataService
 from ..services.project_card_search_service import ProjectCardSearchService
 
@@ -33,16 +34,9 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
         orga_code = request.GET.get('orga_code', "").strip() or None
         query = query or None
 
-        # Mapping der Kürzel zu vollständigen Namen
-        orga_mapping = {
-            "fuk": "Folkwang Universität der Künste",
-            "rsh": "Robert Schumann Hochschule Düsseldorf",
-            "khm": "Kunsthochschule für Medien Köln",
-            "det": "Hochschule für Musik Detmold",
-            "hmt": "Hochschule für Musik und Tanz Köln"
-        }
-        # Reverse mapping: full name -> short code
-        reverse_orga_mapping = {v: k for k, v in orga_mapping.items()}
+        # Use centralized mapping from ProjectIndex model
+        orga_mapping = ProjectIndex.ORG_CODE_TO_NAME
+        reverse_orga_mapping = ProjectIndex.NAME_TO_ORG_CODE
 
         # Convert to display name for UI, and short code for filtering
         if orga_code in orga_mapping:
@@ -50,7 +44,7 @@ class CatalogView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperMixin):
             orga_display = orga_mapping[orga_code]
             orga_code_short = orga_code
         elif orga_code in reverse_orga_mapping:
-            # Full name provided (e.g., "Folkwang Universität der Künste")
+            # Full name provided (e.g., "Folkwang Universität der Künste") - backwards compat
             orga_display = orga_code
             orga_code_short = reverse_orga_mapping[orga_code]
         else:
