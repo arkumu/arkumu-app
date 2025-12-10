@@ -146,15 +146,14 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                 is_public_approved=True,
             ).exclude(title__isnull=True).exclude(title='')
 
-            # Get unique institutions from org_code mapping
-            org_code_to_name = ProjectIndex.ORG_CODE_TO_NAME
-
-            institution_set = set()
-            for code in base_qs.values_list('org_code', flat=True).distinct():
-                if code and code in org_code_to_name:
-                    institution_set.add(org_code_to_name[code])
-
-            all_institutions = sorted(institution_set)
+            # Hardcoded institutions list
+            all_institutions = [
+                "Folkwang Universität der Künste",
+                "Hochschule für Musik Detmold",
+                "Hochschule für Musik und Tanz Köln",
+                "Kunsthochschule für Medien Köln",
+                "Robert Schumann Hochschule Düsseldorf",
+            ]
 
             # Get unique categories (flatten ArrayField) - already human-readable labels
             all_categories_raw = set()
