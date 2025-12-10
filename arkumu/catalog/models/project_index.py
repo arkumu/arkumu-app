@@ -161,8 +161,14 @@ class ProjectIndex(models.Model):
 
     # --- Card methods ---
 
-    def to_card_dict(self) -> dict:
-        """Materialize the stored projection into the public card payload."""
+    def to_card_dict(self, valid_preview_paths: Optional[set] = None) -> dict:
+        """Materialize the stored projection into the public card payload.
+
+        Args:
+            valid_preview_paths: Optional pre-loaded set of valid PreviewImages paths.
+                If provided, avoids N+1 queries by checking against this set.
+                If None, falls back to querying the database (slower).
+        """
 
         def _preferred_image() -> str:
             # Return first digital_object_path that exists in PreviewImages
@@ -173,8 +179,13 @@ class ProjectIndex(models.Model):
                 normalized = path.replace("\\", "/")
                 if not normalized.startswith("/"):
                     normalized = "/" + normalized
-                if PreviewImages.objects.filter(path=normalized).exists():
-                    return normalized
+                # Use pre-loaded set if available, otherwise query DB
+                if valid_preview_paths is not None:
+                    if normalized in valid_preview_paths:
+                        return normalized
+                else:
+                    if PreviewImages.objects.filter(path=normalized).exists():
+                        return normalized
             return ""
 
         card = {

@@ -25,7 +25,7 @@ from arkumu.projects import ProjectRecord, ProjectSnapshot
 from arkumu.metadata.models import Resource, PublicAccessLevel
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.catalog.services.schema_manifest_service import CardSchema, CARD_SCHEMA_TEMPLATE
-from arkumu.catalog.models import ProjectIndex, ProjectRecordIndex
+from arkumu.catalog.models import ProjectIndex, ProjectRecordIndex, PreviewImages
 
 if TYPE_CHECKING:
     # Only imported for type checking to avoid circular imports at runtime.
@@ -38,14 +38,22 @@ _CARDS_CACHE_KEY = "arkumu:catalog:all_cards"
 _CARDS_CACHE_TTL = None  # No expiry - invalidate manually after rebuild
 
 
+def _get_valid_preview_paths() -> set:
+    """Pre-load all valid PreviewImages paths into a set for efficient lookup."""
+    return set(PreviewImages.objects.values_list("path", flat=True))
+
+
 def warm_cards_cache() -> int:
     """Load all cards into Redis cache at startup. Returns count of cached cards."""
     try:
+        # Pre-load all valid preview paths to avoid N+1 queries
+        valid_paths = _get_valid_preview_paths()
+
         base_qs = ProjectIndex.objects.filter(
             public_access_level=PublicAccessLevel.PUBLIC,
             is_public_approved=True,
         ).exclude(title__isnull=True).exclude(title='')
-        cards = [entry.to_card_dict() for entry in base_qs.order_by("title")]
+        cards = [entry.to_card_dict(valid_preview_paths=valid_paths) for entry in base_qs.order_by("title")]
         cache.set(_CARDS_CACHE_KEY, cards, _CARDS_CACHE_TTL)
         logger.info("warm_cards_cache: loaded %d cards into Redis", len(cards))
         return len(cards)
@@ -653,7 +661,9 @@ class ProjectIndexService:
                 # Filter projects that have at least one year in the range
                 base_qs = base_qs.filter(year_values__overlap=year_range_list)
 
-            cards = [entry.to_card_dict() for entry in base_qs.order_by("title")]
+            # Pre-load all valid preview paths to avoid N+1 queries
+            valid_paths = _get_valid_preview_paths()
+            cards = [entry.to_card_dict(valid_preview_paths=valid_paths) for entry in base_qs.order_by("title")]
             logger.info(
                 "ProjectIndexService[db]: materialized %d cards (query='%s', organ_code='%s', categories=%s, actors=%s, catchphrases=%s, year_from=%s, year_to=%s)",
                 len(cards),
