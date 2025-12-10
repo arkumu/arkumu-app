@@ -3918,3 +3918,73 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
             read_only_relationships=read_only_relationships,
         )
         return HttpResponse(html, status=400)
+
+
+class DeleteEntityView(LoginRequiredMixin, View):
+    """HTMX view to delete an entity and all its associated triples."""
+
+    def post(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        entity_uri = request.POST.get("entity_uri")
+        dataset_name = request.POST.get("dataset")
+
+        if not entity_uri:
+            return HttpResponseBadRequest("Missing entity_uri parameter")
+        if not dataset_name:
+            return HttpResponseBadRequest("Missing dataset parameter")
+
+        try:
+            service = _get_schema_service(request, mapping_id)
+        except ValueError as exc:
+            return HttpResponseBadRequest(str(exc))
+
+        # Get the entity resource
+        entity = Resource.objects.filter(uri=entity_uri).first()
+        if not entity:
+            return HttpResponseBadRequest(f"Entity not found: {entity_uri}")
+
+        # Check organization ownership
+        org_code = service.organization.code if service.organization else None
+        if org_code and not entity_uri.startswith(f"http://arkumu.org/data/{org_code}/"):
+            return HttpResponseBadRequest("Cannot delete entity from another organization")
+
+        # Get entity label before deletion for confirmation message
+        entity_label = _infer_entity_label(service, entity_uri, dataset_name)
+
+        # Delete triples where this entity is the subject (its own properties)
+        subject_triples_deleted = Triple.objects.filter(subject=entity).delete()[0]
+
+        # Delete triples where this entity is the object (references from other entities)
+        # This cleans up dangling references but does NOT delete the other resources
+        object_triples_deleted = Triple.objects.filter(object=entity).delete()[0]
+
+        # Delete the entity resource itself
+        entity.delete()
+
+        logger.info(
+            "DeleteEntityView: Deleted entity %s (%d subject triples, %d object triples)",
+            entity_uri,
+            subject_triples_deleted,
+            object_triples_deleted,
+        )
+
+        # Return fresh dataset panel with success message
+        field_metadata = service.get_field_metadata(dataset_name)
+        field_metadata, join_field_map = service.augment_field_metadata_with_joins(
+            dataset_name,
+            field_metadata,
+        )
+        form = DatasetEntityForm(field_metadata=field_metadata)
+        _remove_join_source_fields(form, join_field_map)
+
+        success_message = f"Entity '{entity_label or entity_uri}' wurde erfolgreich geloscht."
+
+        html = _render_dataset_panel(
+            request,
+            service=service,
+            dataset_name=dataset_name,
+            form=form,
+            field_metadata=field_metadata,
+            join_field_map=join_field_map,
+            success_message=success_message,
+        )
+        return HttpResponse(html)
