@@ -453,6 +453,13 @@ class Command(BaseCommand):
             dest="organizations",
             help="Limit processing to the provided organization code(s)",
         )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            dest="dry_run",
+            default=False,
+            help="Preview changes without writing to the database",
+        )
 
     def handle(self, *args, **options):
         dry_run: bool = options.get("dry_run", False)

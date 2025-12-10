@@ -65,9 +65,10 @@ def promote_legacy_junctions_task(
         raise ValueError(f"Mapping {mapping_id} is missing organization_id")
 
     logger.info(
-        "Running promote_legacy_junctions for org=%s (mapping=%s)",
+        "Running promote_legacy_junctions for org=%s (mapping=%s, dry_run=%s)",
         org_code,
         mapping.id,
+        dry_run,
     )
     call_command(
         "promote_legacy_junctions",

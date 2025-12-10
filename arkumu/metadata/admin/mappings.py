@@ -332,7 +332,6 @@ class MappingAdmin(admin.ModelAdmin):
             task = promote_legacy_junctions_task.schedule(
                 kwargs={
                     "mapping_id": str(mapping.id),
-                    "dry_run": False,
                 },
                 delay=0,
             )
