@@ -20,7 +20,14 @@ from arkumu.storage.services.verification_service import (
     verify_single_object,
 )
 from arkumu.storage.tasks import verify_s3_prefix
-from arkumu.users.mixins import GeneralLoginRequiredMixin, general_login_required
+from arkumu.users.mixins import (
+    GeneralLoginRequiredMixin,
+    general_login_required,
+    can_access_organization,
+    get_accessible_organizations,
+    organization_access_required,
+    OrganizationAccessMixin,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,17 +196,19 @@ class ArchivistDashboardView(GeneralLoginRequiredMixin, BaseCoordinatorMixin, CS
                 logger.info("No organization selected in session or URL")
             
             logger.info("Attempting to get available organizations...")
-            # Get organizations from database, auto-create if none exist
+            # Get organizations from database, filtered by user access
             from arkumu.users.models import Organization
             from arkumu.users.utils import ensure_predefined_organizations
-            
-            organizations = list(Organization.objects.filter(is_active=True))
-            
+
             # Auto-populate organizations if none exist
-            if not organizations:
+            all_orgs = Organization.objects.filter(is_active=True)
+            if not all_orgs.exists():
                 logger.info("No organizations found, creating predefined ones...")
                 ensure_predefined_organizations()
-                organizations = list(Organization.objects.filter(is_active=True))
+
+            # Filter organizations based on user access
+            # Superusers see all, regular users see only their org
+            organizations = list(get_accessible_organizations(request.user))
             
             logger.info(f"Got {len(organizations)} available organizations from database.")
             
@@ -429,6 +438,7 @@ def view_organization_bucket(request):
         }, status=500)
 
 
+@organization_access_required
 @general_login_required
 @require_http_methods(["POST"])
 def verify_file(request):
@@ -485,6 +495,7 @@ def verify_file(request):
     return HttpResponse(response_html)
 
 
+@organization_access_required
 @general_login_required
 @require_http_methods(["POST"])
 def verify_prefix(request):
@@ -538,6 +549,7 @@ def upload_mode_toggle(request):
 
 
 @require_http_methods(["GET", "POST"])
+@organization_access_required
 @general_login_required
 def refresh_file_browser(request, organization):
     """
@@ -813,6 +825,7 @@ def dismiss_message(request):
 
 
 @require_http_methods(["GET"])
+@organization_access_required
 @general_login_required
 def bucket_size_info(request, organization):
     """
@@ -896,6 +909,7 @@ def bucket_size_info(request, organization):
 
 
 @require_http_methods(["GET"])
+@organization_access_required
 @general_login_required
 def export_successful_imports_csv(request, organization: str):
     """

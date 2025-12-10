@@ -15,8 +15,9 @@ from django.views.decorators.http import require_http_methods
 
 from arkumu.storage.services.upload_service import UploadService
 from arkumu.storage.services.async_upload_manager import AsyncUploadManager
-from arkumu.users.mixins import general_login_required
+from arkumu.users.mixins import general_login_required, can_access_organization
 from arkumu.storage.models.upload_tracking import AsyncUploadSession, AsyncUploadFile
+from django.core.exceptions import PermissionDenied
 from arkumu.metadata.views.dashboard_helpers import (
     build_session_entry,
     summarize_upload_stats,
@@ -58,7 +59,15 @@ def batch_presigned_urls(request):
         organization = data.get('organization', '')
         session_id = data.get('session_id')
         total_files_override = data.get('total_files')
-        
+
+        # Check organization access
+        if organization and not can_access_organization(request.user, organization):
+            logger.warning(f"User {request.user.id} denied upload to org {organization}")
+            return JsonResponse({
+                'success': False,
+                'error': f"You don't have permission to upload to organization '{organization}'"
+            }, status=403)
+
         if not files:
             logger.error("❌ No files provided in batch request")
             return JsonResponse({

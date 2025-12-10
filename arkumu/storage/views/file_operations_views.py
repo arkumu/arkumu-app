@@ -19,7 +19,11 @@ from django.contrib.auth import get_user_model
 
 # Django cache
 from django.core.cache import cache
-from arkumu.users.mixins import general_login_required
+from arkumu.users.mixins import (
+    general_login_required,
+    organization_access_required,
+    can_access_organization,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +99,7 @@ def organization_dashboard(request):
 
 
 
+@organization_access_required
 @general_login_required
 def organization_contents(request, organization=None):
     """
@@ -224,11 +229,12 @@ def organization_contents(request, organization=None):
 
 
 
+@organization_access_required
 @general_login_required
 def file_content(request, bucket_type, file_path):
     """
     Retrieve and display the content of a file from a bucket.
-    
+
     This view serves the content of a file directly to the browser.
     For binary files (images, etc.), it streams the content with the
     appropriate content type. For text files, it renders the content
@@ -274,14 +280,15 @@ def file_content(request, bucket_type, file_path):
 
 
 
+@organization_access_required
 @general_login_required
 def delete_object(request, bucket_type, object_type, object_path):
     """
     Delete a file or folder from a bucket.
-    
+
     This operation permanently deletes the specified object from the bucket.
     If the object is a folder, all contents will also be deleted.
-    
+
     Args:
         bucket_type: "ingest", "production", or "org-{organization_name}"
         object_type: "file" or "folder"
@@ -875,6 +882,7 @@ def _handle_text_file(request, bucket_service, bucket_name, file_path, filename,
         })
 
 
+@organization_access_required
 @general_login_required
 def stream_file(request, bucket_type, file_path):
     """

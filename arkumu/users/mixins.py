@@ -295,11 +295,145 @@ def dangerous_operations_required(view_func):
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
             raise PermissionDenied("Authentication required")
-        
+
         if request.user.role != 'system_admin':
             raise PermissionDenied("Dangerous operations require system administrator access.")
-        
+
         return view_func(request, *args, **kwargs)
     return wrapper
 
+
+# ============================================================================
+# ORGANIZATION ACCESS CONTROL
+# ============================================================================
+
+def can_access_organization(user, organization_code: str) -> bool:
+    """
+    Check if user can access the given organization's bucket.
+
+    Rules:
+    - Superusers can access any organization
+    - Regular users can only access their own organization's bucket
+
+    Args:
+        user: The authenticated user
+        organization_code: The organization code (e.g., 'rsh', 'fuk', 'khm')
+
+    Returns:
+        True if user can access the organization, False otherwise
+    """
+    if not user.is_authenticated:
+        return False
+
+    if user.is_superuser:
+        return True
+
+    user_org = getattr(user, 'organization', None)
+    if user_org and user_org.code == organization_code:
+        return True
+
+    return False
+
+
+def get_accessible_organizations(user):
+    """
+    Get list of organizations the user can access.
+
+    Rules:
+    - Superusers can access all active organizations
+    - Regular users can only access their own organization
+
+    Args:
+        user: The authenticated user
+
+    Returns:
+        QuerySet of Organization objects the user can access
+    """
+    from arkumu.users.models import Organization
+
+    if not user.is_authenticated:
+        return Organization.objects.none()
+
+    if user.is_superuser:
+        return Organization.objects.filter(is_active=True)
+
+    user_org = getattr(user, 'organization', None)
+    if user_org:
+        return Organization.objects.filter(id=user_org.id, is_active=True)
+
+    return Organization.objects.none()
+
+
+def organization_access_required(view_func):
+    """
+    Decorator that checks if user can access the organization specified in the request.
+
+    Looks for organization in:
+    - URL kwargs: 'organization'
+    - GET params: 'organization' or 'org'
+    - POST params: 'organization' or 'org'
+    - bucket_type URL kwarg starting with 'org-'
+    """
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            raise PermissionDenied("Authentication required")
+
+        # Try to find organization code from various sources
+        org_code = None
+
+        # Check URL kwargs
+        if 'organization' in kwargs:
+            org_code = kwargs['organization']
+        elif 'bucket_type' in kwargs and kwargs['bucket_type'].startswith('org-'):
+            org_code = kwargs['bucket_type'][4:]  # Remove 'org-' prefix
+
+        # Check GET params
+        if not org_code:
+            org_code = request.GET.get('organization') or request.GET.get('org')
+
+        # Check POST params
+        if not org_code:
+            org_code = request.POST.get('organization') or request.POST.get('org')
+
+        # If no organization specified, allow (view will handle it)
+        if not org_code:
+            return view_func(request, *args, **kwargs)
+
+        # Check access
+        if not can_access_organization(request.user, org_code):
+            raise PermissionDenied(f"You don't have permission to access organization '{org_code}'")
+
+        return view_func(request, *args, **kwargs)
+    return wrapper
+
+
+class OrganizationAccessMixin(LoginRequiredMixin):
+    """
+    Mixin that checks if user can access the organization specified in the request.
+    """
+
+    def get_organization_code(self):
+        """Get organization code from request. Override in subclass if needed."""
+        # Check URL kwargs
+        if 'organization' in self.kwargs:
+            return self.kwargs['organization']
+        if 'bucket_type' in self.kwargs and self.kwargs['bucket_type'].startswith('org-'):
+            return self.kwargs['bucket_type'][4:]
+
+        # Check GET/POST params
+        return (
+            self.request.GET.get('organization') or
+            self.request.GET.get('org') or
+            self.request.POST.get('organization') or
+            self.request.POST.get('org')
+        )
+
+    def dispatch(self, request, *args, **kwargs):
+        org_code = self.get_organization_code()
+
+        if org_code and not can_access_organization(request.user, org_code):
+            raise PermissionDenied(f"You don't have permission to access organization '{org_code}'")
+
+        return super().dispatch(request, *args, **kwargs)
  
