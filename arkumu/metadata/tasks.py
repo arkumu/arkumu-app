@@ -6,7 +6,8 @@ from typing import Iterable, List
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.management import call_command
 
-from huey.contrib.djhuey import db_task
+from huey import crontab
+from huey.contrib.djhuey import db_task, db_periodic_task
 
 from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.services.external_sources_entity_cache_service import (
@@ -108,3 +109,59 @@ def create_promoted_manifest_task(
         f"create_promoted_schema_manifest completed for mapping '{mapping.id}' "
         f"(org '{org_code}', output_key '{output_key}')"
     )
+
+
+@db_task()
+def promote_and_reindex_task(
+    *,
+    organizations: List[str],
+) -> str:
+    """
+    Promote legacy junctions for multiple organizations, then rebuild project index.
+
+    This task:
+    1. Runs promote_legacy_junctions for each organization
+    2. Rebuilds the project index for all projects
+    """
+    org_codes = [org.lower() for org in organizations]
+
+    logger.info("Starting promote_and_reindex for orgs=%s", org_codes)
+
+    # Step 1: Promote legacy junctions for all orgs
+    for org_code in org_codes:
+        logger.info("Promoting legacy junctions for org=%s", org_code)
+        call_command(
+            "promote_legacy_junctions",
+            organizations=[org_code],
+        )
+        logger.info("Completed promote_legacy_junctions for org=%s", org_code)
+
+    # Step 2: Rebuild project index
+    logger.info("Rebuilding project index...")
+    call_command("rebuild_project_index")
+    logger.info("Completed rebuild_project_index")
+
+    return f"promote_and_reindex completed for orgs: {', '.join(org_codes)}"
+
+
+@db_periodic_task(crontab(minute='0', hour='0'))
+def nightly_promote_and_reindex():
+    """
+    Nightly task to promote legacy junctions and rebuild project index.
+
+    Runs at 00:00 (midnight) every day for rsh, fuk, det organizations.
+    """
+    organizations = ["rsh", "fuk", "det"]
+    logger.info("Starting nightly promote_and_reindex for orgs=%s", organizations)
+
+    for org_code in organizations:
+        logger.info("Promoting legacy junctions for org=%s", org_code)
+        call_command(
+            "promote_legacy_junctions",
+            organizations=[org_code],
+        )
+        logger.info("Completed promote_legacy_junctions for org=%s", org_code)
+
+    logger.info("Rebuilding project index...")
+    call_command("rebuild_project_index")
+    logger.info("Completed nightly promote_and_reindex")

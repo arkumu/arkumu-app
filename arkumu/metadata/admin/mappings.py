@@ -17,6 +17,7 @@ from django.utils.translation import gettext_lazy as _
 from arkumu.metadata.models.mappings import Mapping, MappingSelectionAudit
 from arkumu.metadata.tasks import (
     create_promoted_manifest_task,
+    promote_and_reindex_task,
     promote_legacy_junctions_task,
 )
 from arkumu.metadata.derivations.kreuz_config import (
@@ -380,6 +381,21 @@ class MappingAdmin(admin.ModelAdmin):
         self.message_user(
             request,
             f"Queued {len(scheduled)} create_promoted_schema_manifest task(s): {preview}",
+            level=messages.SUCCESS,
+        )
+
+    @admin.action(description=_("Queue promote + reindex for rsh/fuk/det (Huey)"))
+    def action_promote_and_reindex(self, request, queryset):
+        """Queue a task to promote legacy junctions for rsh, fuk, det and rebuild project index."""
+        task = promote_and_reindex_task.schedule(
+            kwargs={
+                "organizations": ["rsh", "fuk", "det"],
+            },
+            delay=0,
+        )
+        self.message_user(
+            request,
+            f"Queued promote_and_reindex task for rsh/fuk/det: {task.id}",
             level=messages.SUCCESS,
         )
 
@@ -810,6 +826,7 @@ class MappingAdmin(admin.ModelAdmin):
         'action_set_active_mapping',
         'action_promote_legacy_junctions',
         'action_generate_promoted_manifest',
+        'action_promote_and_reindex',
         'action_export_mapping',
         'mark_as_validated',
         'mark_as_active',
