@@ -147,7 +147,6 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             ).exclude(title__isnull=True).exclude(title='')
 
             # Get unique institutions from org_code mapping
-            from arkumu.catalog.models import ProjectIndex
             org_code_to_name = ProjectIndex.ORG_CODE_TO_NAME
 
             institution_set = set()
