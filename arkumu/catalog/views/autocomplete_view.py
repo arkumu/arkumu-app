@@ -69,12 +69,14 @@ class FilterAutocompleteView(GeneralLoginRequiredMixin, View):
         return filtered[:self.MAX_RESULTS]
 
     def _get_institution_options(self, query, selected):
-        qs = self._get_base_queryset()
-        all_institutions = sorted(set(
-            qs.exclude(institution_label='')
-            .values_list('institution_label', flat=True)
-            .distinct()
-        ))
+        # Hardcoded institutions list
+        all_institutions = [
+            "Folkwang Universität der Künste",
+            "Hochschule für Musik Detmold",
+            "Hochschule für Musik und Tanz Köln",
+            "Kunsthochschule für Medien Köln",
+            "Robert Schumann Hochschule Düsseldorf",
+        ]
 
         filtered = [
             i for i in all_institutions
