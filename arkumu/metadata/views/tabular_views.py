@@ -5,14 +5,17 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlencode
 
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator
 from django.db.models import CharField, Exists, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce, Lower
+from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.formats import date_format
 from django.utils.text import slugify
+from django.views import View
 
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
@@ -1628,9 +1631,15 @@ def _build_rows_for_subjects(
                 if entity_param_value:
                     query_params['entity'] = entity_param_value
                 query = urlencode(query_params)
+                # Get dataset name from config for delete functionality
+                cfg = ENTITY_CONFIG.get(entity_type, {})
+                dataset_name = cfg.get('dataset_name', '')
                 row['Aktionen'] = {
                     "href": f"{edit_url}?{query}",
                     "label": "Bearbeiten",
+                    "entity_uri": s.uri,
+                    "dataset": dataset_name,
+                    "organization": org.code if org else "",
                 }
             else:
                 row['Aktionen'] = None
@@ -1931,3 +1940,61 @@ def sammlung_table_view(request):
 
 def schlagwort_table_view(request):
     return _tabular_view(request, 'schlagwort')
+
+
+class TabularDeleteEntityView(LoginRequiredMixin, View):
+    """HTMX view to delete an entity from the tabular view."""
+
+    def post(self, request: HttpRequest) -> HttpResponse:
+        entity_uri = request.POST.get("entity_uri")
+        dataset_name = request.POST.get("dataset")
+        organization_code = request.POST.get("organization")
+
+        logger.info(
+            "TabularDeleteEntityView: POST received - entity_uri=%s, dataset=%s, org=%s, user=%s",
+            entity_uri, dataset_name, organization_code, request.user
+        )
+
+        if not entity_uri:
+            logger.warning("TabularDeleteEntityView: Missing entity_uri")
+            return HttpResponseBadRequest("Missing entity_uri parameter")
+        if not dataset_name:
+            logger.warning("TabularDeleteEntityView: Missing dataset")
+            return HttpResponseBadRequest("Missing dataset parameter")
+
+        entity = Resource.objects.filter(uri=entity_uri).first()
+        if not entity:
+            logger.warning("TabularDeleteEntityView: Entity not found: %s", entity_uri)
+            return HttpResponseBadRequest(f"Entity not found: {entity_uri}")
+
+        # Verify organization ownership (superusers can delete any org's entities)
+        user_org = getattr(request.user, 'organization', None)
+        is_superuser = getattr(request.user, 'is_superuser', False)
+        logger.info(
+            "TabularDeleteEntityView: user_org=%s (id=%s), entity.organization=%s (id=%s), is_superuser=%s",
+            user_org, user_org.id if user_org else None,
+            entity.organization, entity.organization_id, is_superuser
+        )
+        if not is_superuser and user_org and entity.organization_id != user_org.id:
+            logger.warning("TabularDeleteEntityView: Org mismatch - user=%s, entity=%s", user_org.id, entity.organization_id)
+            return HttpResponseBadRequest("Cannot delete entity from another organization")
+
+        # Delete triples where this entity is the subject (its own properties)
+        subject_triples_deleted = Triple.objects.filter(subject=entity).delete()[0]
+
+        # Delete triples where this entity is the object (dangling references)
+        object_triples_deleted = Triple.objects.filter(object=entity).delete()[0]
+
+        entity.delete()
+
+        logger.info(
+            "TabularDeleteEntityView: Deleted entity %s (%d subject triples, %d object triples)",
+            entity_uri,
+            subject_triples_deleted,
+            object_triples_deleted,
+        )
+
+        # Return HX-Refresh header to reload the page
+        response = HttpResponse()
+        response['HX-Refresh'] = 'true'
+        return response

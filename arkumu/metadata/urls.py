@@ -473,4 +473,7 @@ urlpatterns = [
     path('tabular/projekt-relation/', tabular_views.projekt_relation_table_view, name='tabular_projekt_relation'),
     path('tabular/sammlung/', tabular_views.sammlung_table_view, name='tabular_sammlung'),
     path('tabular/schlagwort/', tabular_views.schlagwort_table_view, name='tabular_schlagwort'),
+
+    # Tabular entity delete endpoint
+    path('tabular/delete-entity/', tabular_views.TabularDeleteEntityView.as_view(), name='tabular_delete_entity'),
     ]
