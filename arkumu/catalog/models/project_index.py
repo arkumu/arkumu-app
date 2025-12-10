@@ -167,8 +167,14 @@ class ProjectIndex(models.Model):
         def _preferred_image() -> str:
             # Return first digital_object_path that exists in PreviewImages
             for path in (self.digital_object_paths or []):
-                if path and PreviewImages.objects.filter(path=path).exists():
-                    return path
+                if not path:
+                    continue
+                # Normalize backslashes to forward slashes
+                normalized = path.replace("\\", "/")
+                if not normalized.startswith("/"):
+                    normalized = "/" + normalized
+                if PreviewImages.objects.filter(path=normalized).exists():
+                    return normalized
             return ""
 
         card = {
