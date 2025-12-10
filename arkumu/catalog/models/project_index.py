@@ -164,11 +164,8 @@ class ProjectIndex(models.Model):
         """Materialize the stored projection into the public card payload."""
 
         def _preferred_image() -> str:
-            if self.image:
-                return self.image
-            if self.digital_object_paths:
-                return self.digital_object_paths[0]
-            return "images/main/card_1.png"
+            # Use black placeholder - no preview images available
+            return ""
 
         card = {
             "uri": self.uri,

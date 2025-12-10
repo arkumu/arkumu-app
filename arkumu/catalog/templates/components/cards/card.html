@@ -19,10 +19,11 @@
         RDF Property: http://arkumu.org/data/properties/vorschaubild (digital-object)
         Digital object path: http://arkumu.org/data/properties/dateipfad
         {% endcomment %}
-{#        {% project_image_url image as image_url %}#}
         {% if image %}
           <img src="/catalog/images/?query={{ image }}" class="w-full h-full object-cover" alt="{{ title }}"
                data-rdf-property="http://arkumu.org/data/properties/vorschaubild">
+        {% else %}
+          <div class="w-full h-full bg-black"></div>
         {% endif %}
       </div>
     </div>

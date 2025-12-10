@@ -1027,15 +1027,32 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         if not normalized:
             return None
 
-        # Apply rosetta prefix for ALL orgs
-        # Output is always: {rosetta_prefix}/{filename}
-        # DCP bundle files keep their folder structure
         normalized_code = (institution_code or "").lower().strip()
         is_dcp_bundle = getattr(obj, "_from_dcp_bundle", False)
-        if normalized.file_name and not is_dcp_bundle:
+        is_s3_org = normalized_code in self._s3_orgs
+
+        # S3 orgs: use base_path + storage_key
+        if is_s3_org and normalized.storage_key:
+            from django.conf import settings
+            base_paths = getattr(settings, "OAI_S3_ROSETTA_BASE_PATHS", {})
+            base_path = base_paths.get(normalized_code, "").rstrip("/")
+            s3_key = normalized.storage_key.lstrip("/")
+            rosetta_path = f"{base_path}/{s3_key}" if base_path else normalized.storage_key
+            normalized = replace(
+                normalized,
+                rosetta_path=rosetta_path,
+                rosetta_candidates=(rosetta_path,),
+            )
+        # Rosetta orgs: apply prefix + filename
+        # DCP bundle files keep their folder structure
+        elif normalized.file_name and not is_dcp_bundle:
             prefix = self._rosetta_curated_prefixes.get(normalized_code)
             if prefix:
-                rosetta_path = f"{prefix}/{normalized.file_name}"
+                # HMT requires Tonbandarchiv subfolder
+                if normalized_code == "hmt":
+                    rosetta_path = f"{prefix}/Tonbandarchiv/{normalized.file_name}"
+                else:
+                    rosetta_path = f"{prefix}/{normalized.file_name}"
                 normalized = replace(
                     normalized,
                     rosetta_path=rosetta_path,

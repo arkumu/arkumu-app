@@ -56,6 +56,12 @@ class CacheConfig(AppConfig):
             except Exception as e:
                 logger.warning(f"Failed to clear caches on startup: {e}")
 
+        # Skip cache warming for Huey workers (Django handles it)
+        is_huey = 'run_huey' in sys.argv
+        if is_huey:
+            logger.debug("Cache warming skipped for Huey worker")
+            return
+
         # Only warm cache in production or when explicitly enabled
         warm_schema = getattr(settings, 'WARM_CACHE_ON_STARTUP', False) or not settings.DEBUG
         warm_projects = getattr(settings, 'WARM_CROSS_INSTITUTIONAL_CACHE_ON_STARTUP', True)  # Enable by default
@@ -66,41 +72,39 @@ class CacheConfig(AppConfig):
             logger.debug("Cache warm-up skipped due to OAI_SKIP_CACHE_WARMUP flag")
 
         if warm_schema:
-            try:
-                # Import here to avoid circular imports during app loading
-                from arkumu.cache.services import SchemaMapCacheService
-                from arkumu.catalog.services.schema_manifest_service import SchemaManifestService
+            def _warm_schema_async():
+                try:
+                    import time
+                    time.sleep(2)  # Wait for DB to be ready
+                    from arkumu.cache.services import SchemaMapCacheService
+                    from arkumu.catalog.services.schema_manifest_service import SchemaManifestService
 
-                logger.info("Warming schema map cache on startup...")
-                schema_cache = SchemaMapCacheService()
+                    logger.info("Warming schema map cache on startup...")
+                    schema_cache = SchemaMapCacheService()
 
-                # Warm only the global cache for fast startup
-                schema_map = _call_threadsafe(
-                    schema_cache.get_complete_schema_map,
-                    include_properties=True,
-                )
-                logger.info(
-                    f"Schema cache warmed: {schema_map['meta']['total_classes']} classes, "
-                    f"{schema_map['meta']['total_properties']} properties"
-                )
+                    schema_map = schema_cache.get_complete_schema_map(include_properties=True)
+                    logger.info(
+                        f"Schema cache warmed: {schema_map['meta']['total_classes']} classes, "
+                        f"{schema_map['meta']['total_properties']} properties"
+                    )
 
-                card_schema_orgs = getattr(settings, 'CACHE_CARD_SCHEMA_ORGS', ['fuk'])
-                schema_service = SchemaManifestService()
+                    card_schema_orgs = getattr(settings, 'CACHE_CARD_SCHEMA_ORGS', ['fuk'])
+                    schema_service = SchemaManifestService()
 
-                for org_code in card_schema_orgs:
-                    try:
-                        logger.info("Warming card schema cache for org '%s' on startup", org_code)
-                        _call_threadsafe(schema_service.get_card_schema, org_code)
-                    except Exception as inner_exc:
-                        logger.warning(
-                            "Failed to warm card schema cache for org '%s': %s",
-                            org_code,
-                            inner_exc,
-                        )
+                    for org_code in card_schema_orgs:
+                        try:
+                            logger.info("Warming card schema cache for org '%s' on startup", org_code)
+                            schema_service.get_card_schema(org_code)
+                        except Exception as inner_exc:
+                            logger.warning(
+                                "Failed to warm card schema cache for org '%s': %s",
+                                org_code,
+                                inner_exc,
+                            )
+                except Exception as e:
+                    logger.warning(f"Failed to warm schema cache on startup: {e}")
 
-            except Exception as e:
-                # Don't fail startup if cache warming fails
-                logger.warning(f"Failed to warm schema cache on startup: {e}")
+            threading.Thread(target=_warm_schema_async, daemon=True).start()
         else:
             logger.debug("Cache warming disabled in DEBUG mode")
 
