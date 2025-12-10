@@ -1,25 +1,8 @@
 {% load storage_extras %}
 
 <li data-file-path="{{ item.path }}">
-    <div class="flex items-center justify-between py-3 px-4 hover:bg-base-50 rounded-lg transition-colors">
-        <div class="flex items-center gap-4 min-w-0 flex-1">
-            <svg class="h-5 w-5 text-info flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2">
-                    <span class="font-medium text-base truncate block" title="{{ item.name }}">{{ item.name }}</span>
-                    {% if item.verified %}
-                    <span class="badge badge-xs badge-success" title="Verified in S3">✓</span>
-                    {% endif %}
-                </div>
-                {% if item.size %}
-                    <span class="text-sm opacity-60">{{ item.size|filesizeformat }}</span>
-                {% endif %}
-            </div>
-        </div>
-
-        <div class="flex items-center gap-2 flex-shrink-0">
+    <div class="flex items-center py-3 px-4 hover:bg-base-50 rounded-lg transition-colors gap-2">
+        <div class="flex items-center gap-1 flex-shrink-0">
             <form
                 hx-post="{% url 'storage:verify_file' %}"
                 hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
@@ -31,9 +14,11 @@
                 <input type="hidden" name="path" value="{{ item.path }}">
                 <input type="hidden" name="prefix" value="{{ listing_prefix }}">
                 <button type="submit"
-                        class="btn btn-ghost btn-sm text-success hover:bg-success/10"
+                        class="btn btn-ghost btn-xs btn-square text-success hover:bg-success/10"
                         title="Verify file in S3">
-                    Verify
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
                 </button>
             </form>
 
@@ -41,7 +26,7 @@
                 <button hx-get="{% url 'storage:file_viewer' bucket_type=bucket_type file_path=item.path %}"
                         hx-target="#file-viewer-modal .modal-box"
                         hx-swap="innerHTML"
-                        class="btn btn-ghost btn-sm text-info hover:bg-info/10" 
+                        class="btn btn-ghost btn-xs btn-square text-info hover:bg-info/10"
                         title="Preview file"
                         onclick="document.getElementById('file-viewer-modal').showModal()">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -50,7 +35,7 @@
                     </svg>
                 </button>
             {% else %}
-                <button class="btn btn-ghost btn-sm btn-disabled opacity-30" 
+                <button class="btn btn-ghost btn-xs btn-square btn-disabled opacity-30"
                         title="File viewing not available">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
@@ -64,12 +49,24 @@
                     hx-target="closest li"
                     hx-swap="outerHTML"
                     hx-confirm="Are you sure you want to delete this file? This cannot be undone."
-                    class="btn btn-ghost btn-sm text-error hover:bg-error/10" 
+                    class="btn btn-ghost btn-xs btn-square text-error hover:bg-error/10"
                     title="Delete File">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                 </svg>
             </button>
+        </div>
+
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+                <span class="font-medium text-base truncate block" title="{{ item.name }}">{{ item.name }}</span>
+                {% if item.verified %}
+                <span class="badge badge-xs badge-success" title="Verified in S3">✓</span>
+                {% endif %}
+            </div>
+            {% if item.size %}
+                <span class="text-sm opacity-60">{{ item.size|filesizeformat }}</span>
+            {% endif %}
         </div>
     </div>
 </li>
