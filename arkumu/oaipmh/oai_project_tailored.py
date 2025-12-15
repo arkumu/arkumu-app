@@ -387,10 +387,13 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
 
         # Always use curated links - they are the source of truth for tailored OAI
         # No fallback to graph digital objects
-        normalized_objects = self._normalize_curated_only_objects(
-            curated_selection,
-            institution_code,
-        )
+        if curated_selection is None:
+            normalized_objects = []
+        else:
+            normalized_objects = self._normalize_curated_only_objects(
+                curated_selection,
+                institution_code,
+            )
 
         return OAIProject(
             record=filtered_record,
