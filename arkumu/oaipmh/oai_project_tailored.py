@@ -38,6 +38,16 @@ from arkumu.oaipmh.models import OAIProjectMediaLink
 from arkumu.oaipmh.services import dcp_index
 
 
+# Tokens indicating a file is a preview/derivative copy (not preservation master)
+_PREVIEW_TOKENS = frozenset({"derivate", "derivative", "modified", "preview", "service"})
+
+
+def _is_preview_s3_file(s3_key: str, file_name: str) -> bool:
+    """Check if an S3 file is a preview/derivative copy based on path/filename hints."""
+    hint = f"{s3_key} {file_name}".lower()
+    return any(token in hint for token in _PREVIEW_TOKENS)
+
+
 # License cache key and TTL
 _LICENSE_CACHE_KEY = "oai:license_entities:all"
 _LICENSE_CACHE_TTL = 3600  # 1 hour
@@ -150,7 +160,7 @@ def batch_fetch_curated_links(project_ids: Sequence[UUID]) -> Dict[UUID, List]:
         return {}
 
     links = (
-        OAIProjectMediaLink.objects.filter(project_id__in=list(project_ids))
+        OAIProjectMediaLink.objects.filter(project_id__in=list(project_ids), is_stale=False)
         .select_related("digital_object")
         .order_by("project_id", "order_index", "created_at", "id")
     )
@@ -935,6 +945,10 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                 if not filename:
                     continue
 
+                # Skip preview/derivative files - only include preservation masters
+                if _is_preview_s3_file(file_obj.s3_key or "", filename):
+                    continue
+
                 fixity = parse_fixity(getattr(file_obj, "sha256_checksum", None))
                 resource_uri = uri_by_resource.get(rid_str)
                 if not resource_uri and getattr(file_obj, "related_resource", None):
@@ -1100,6 +1114,11 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             rid_uuid = getattr(file_obj, "related_resource_id", None)
             if rid_uuid not in uuid_map:
                 continue
+
+            # Skip preview/derivative files - only include preservation masters
+            if _is_preview_s3_file(file_obj.s3_key or "", file_obj.file_name or ""):
+                continue
+
             rid_str = uuid_map[rid_uuid]
             fixity = parse_fixity(getattr(file_obj, "sha256_checksum", None))
             resource_uri = uri_by_resource.get(rid_str)

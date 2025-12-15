@@ -24,6 +24,19 @@ from .oai_project_assembler import AssemblyContext, OAIProjectAssembler
 
 logger = logging.getLogger(__name__)
 
+# Tokens indicating a file is a preview/derivative copy (not preservation master)
+_PREVIEW_TOKENS = frozenset({"derivate", "derivative", "modified", "preview", "service"})
+
+
+def _is_preview_file(obj: ProjectDigitalObject) -> bool:
+    """Check if a digital object is a preview/derivative copy based on path/filename hints."""
+    hint_parts = [
+        getattr(obj, "storage_key", None) or getattr(obj, "path", None) or "",
+        getattr(obj, "file_name", None) or "",
+    ]
+    hint = " ".join(hint_parts).lower()
+    return any(token in hint for token in _PREVIEW_TOKENS)
+
 
 @dataclass(frozen=True)
 class MediaLinkCandidate:
@@ -114,14 +127,19 @@ class OAIProjectMediaSyncService:
         if not digital_objects:
             return []
 
-        ids = [obj.resource_id for obj in digital_objects if getattr(obj, "resource_id", None)]
-        uris = [obj.uri for obj in digital_objects if getattr(obj, "uri", None)]
+        # Filter out previews/derivative copies - only seed preservation masters
+        preservation_objects = [obj for obj in digital_objects if not _is_preview_file(obj)]
+        if not preservation_objects:
+            return []
+
+        ids = [obj.resource_id for obj in preservation_objects if getattr(obj, "resource_id", None)]
+        uris = [obj.uri for obj in preservation_objects if getattr(obj, "uri", None)]
 
         resources_by_id = self._resources_by_id(ids)
         resources_by_uri = self._resources_by_uri(uris)
 
         candidates: List[MediaLinkCandidate] = []
-        for obj in digital_objects:
+        for obj in preservation_objects:
             resource = None
             resource_id = getattr(obj, "resource_id", None)
             if resource_id:
