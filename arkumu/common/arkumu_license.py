@@ -22,8 +22,11 @@ ARKUMU_LICENSE_TEXTS: Dict[str, str] = {
         "Werk erstmalig zu digitalisieren oder eine digitale Dokumentation des Werkes zu erstellen. Sofern für Zwecke "
         "der Langzeitverfügbarkeit eine Umwandlung bestehender Dateiformate in andere Dateiformate erforderlich ist und "
         "diese Umwandlung eine Bearbeitung darstellen sollte, werden ebenfalls die für diese Zwecke erforderlichen "
-        "Bearbeitungsrechte eingeräumt.\n\n"
-        "(Lizenz arkumu-A 1.0)"
+        "Bearbeitungsrechte eingeräumt. Der/die Lizenzgeber:in versichert außerdem, dass alle Personen genannt worden "
+        "sind, die mit dem/der Lizenzgeber:in gemeinsam Rechte an dem Werk haben (Miturheber § 8 UrhG oder Urheber "
+        "verbundener Werke § 9 UrhG). Ebenso bestätigt der/die Lizenzgeber:in, dass, wenn Fremdmaterial Dritter in dem "
+        "Werk oder \"Projekt\" verwendet wurde, er/sie die Rechte an diesem Material rechtskräftig für die oben "
+        "genannten Nutzungen erworben hat."
     ),
     "2": (
         "Die Hochschule erwirbt das einfache (nicht-exklusive) zeitlich, räumlich und inhaltlich unbeschränkte Recht, "

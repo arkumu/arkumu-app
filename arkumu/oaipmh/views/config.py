@@ -85,7 +85,11 @@ SIMPLIFIED_LICENSE_NOTE = (
     "Dokumentation des Werkes zu erstellen. Sofern für Zwecke der Langzeitverfügbarkeit eine Umwandlung "
     "bestehender Dateiformate in andere Dateiformate erforderlich ist und diese Umwandlung eine Bearbeitung "
     "darstellen sollte, werden ebenfalls die für diese Zwecke erforderlichen Bearbeitungsrechte eingeräumt. "
-    "(Lizenz arkumu-A 1.0)"
+    "Der/die Lizenzgeber:in versichert außerdem, dass alle Personen genannt worden sind, die mit dem/der "
+    "Lizenzgeber:in gemeinsam Rechte an dem Werk haben (Miturheber § 8 UrhG oder Urheber verbundener Werke "
+    "§ 9 UrhG). Ebenso bestätigt der/die Lizenzgeber:in, dass, wenn Fremdmaterial Dritter in dem Werk oder "
+    "\"Projekt\" verwendet wurde, er/sie die Rechte an diesem Material rechtskräftig für die oben genannten "
+    "Nutzungen erworben hat."
 )
 
 _TAILORED_MIN_DATETIME = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
