@@ -1016,10 +1016,11 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         obj: ProjectDigitalObject,
         institution_code: Optional[str],
     ) -> Optional[NormalizedDigitalObject]:
-        # Only process objects from S3FileObject or curated media links
+        # Only process objects from S3FileObject, curated media links, or DCP bundles
         from_s3 = getattr(obj, "_from_s3_file_object", False)
         from_curated = getattr(obj, "_from_curated_media_link", False)
-        if not from_s3 and not from_curated:
+        from_dcp = getattr(obj, "_from_dcp_bundle", False)
+        if not from_s3 and not from_curated and not from_dcp:
             return None
 
         setattr(obj, "_bypass_dump_fixity", True)

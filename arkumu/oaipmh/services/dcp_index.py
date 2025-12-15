@@ -51,8 +51,9 @@ def _load_dcp_files_cache() -> None:
         except ValueError:
             continue
 
-        remainder = segments[idx + 1:]
-        if remainder:
+        # Include folder_name in path to match get_bundle_members() format
+        remainder = segments[idx:]
+        if len(remainder) > 1:  # folder_name + at least one file segment
             results[folder_name].append("/".join(remainder))
 
     # Convert to tuples
@@ -115,10 +116,19 @@ def batch_get_bundle_members(
     if not org or not folder_names:
         return {}
 
-    # Use in-memory cache for KHM
+    # Use in-memory cache for KHM, with fallback for missing folders
     if org == "khm":
         _load_dcp_files_cache()
-        return {fn: _DCP_FILES_CACHE.get(fn, ()) for fn in folder_names if fn in _DCP_FILES_CACHE}
+        results: Dict[str, Tuple[str, ...]] = {}
+        for fn in folder_names:
+            if fn in _DCP_FILES_CACHE:
+                results[fn] = _DCP_FILES_CACHE[fn]
+            else:
+                # Fallback to path_mapping scan for folders not in DB index
+                lookup = get_bundle_members(org, fn)
+                if lookup.relative_file_paths:
+                    results[fn] = lookup.relative_file_paths
+        return results
 
     # Fallback to DB query for other orgs
     qs = OAIDcpPathIndex.objects.filter(
