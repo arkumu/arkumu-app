@@ -360,6 +360,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         record: ProjectRecord,
         *,
         skip_shared_event_filter: bool = False,
+        skip_format_exclusion: bool = False,
         prefetched_curated_links: Optional[List] = None,
         prefetched_dcp_data: Optional[BatchedDcpData] = None,
         prefetched_graph_data: Optional[BatchedGraphData] = None,
