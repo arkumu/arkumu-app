@@ -361,6 +361,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         *,
         skip_shared_event_filter: bool = False,
         skip_format_exclusion: bool = False,
+        use_curated_media_links: bool = True,  # Always True for tailored, accepted for API compat
         prefetched_curated_links: Optional[List] = None,
         prefetched_dcp_data: Optional[BatchedDcpData] = None,
         prefetched_graph_data: Optional[BatchedGraphData] = None,
