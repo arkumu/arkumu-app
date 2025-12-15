@@ -468,11 +468,40 @@ def extract_digital_objects(
             continue
 
         file_name = get_literal(index, do_uri, Predicates.FILE_NAME)
-        license_label = get_literal(index, do_uri, Predicates.LICENSE)
 
+        # Extract license - can be direct literal OR FK to license entity
         license_obj = None
+
+        # Method 1: Try direct license label on digital object
+        license_label = get_literal(index, do_uri, Predicates.LICENSE)
         if license_label:
             license_obj = ProjectDigitalObjectLicense(label_de=license_label)
+
+        # Method 2: Follow FK to license entity (RSH pattern)
+        if not license_obj:
+            license_uri = get_object_uri(index, do_uri, Predicates.LICENSE_STATUS)
+            if license_uri:
+                # Extract properties from the license entity
+                lic_uri_val = get_literal(index, license_uri, Predicates.LICENSE_URI)
+                lic_label_de = (
+                    get_literal(index, license_uri, Predicates.LICENSE_LABEL_DE)
+                    or get_literal(index, license_uri, Predicates.LICENSE_NAME_DE)
+                )
+                lic_label_en = (
+                    get_literal(index, license_uri, Predicates.LICENSE_LABEL_EN)
+                    or get_literal(index, license_uri, Predicates.LICENSE_NAME_EN)
+                )
+                lic_rights = get_literal(index, license_uri, Predicates.LICENSE_RIGHTS_STATEMENT)
+                lic_identifier = get_literal(index, license_uri, Predicates.LICENSE_IDENTIFIER)
+
+                if any([lic_uri_val, lic_label_de, lic_label_en, lic_rights, lic_identifier]):
+                    license_obj = ProjectDigitalObjectLicense(
+                        uri=lic_uri_val,
+                        label_de=lic_label_de,
+                        label_en=lic_label_en,
+                        rights_statement=lic_rights,
+                        identifier=lic_identifier,
+                    )
 
         # Enrich with S3 metadata if available
         s3_obj = s3_by_uri.get(do_uri)

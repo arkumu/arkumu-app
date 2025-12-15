@@ -8,11 +8,13 @@ from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from uuid import UUID
 
+from django.core.cache import cache
 from django.db.models import Count, Q
 
 from arkumu.catalog.services.project_views import ProjectURIs
 from arkumu.metadata.models import Resource
 from arkumu.metadata.models.triples import Triple
+from arkumu.projects import ProjectDigitalObjectLicense
 from arkumu.storage.models.s3_file_objects import S3FileObject
 from arkumu.projects.services.snapshot_service import ProjectSnapshotService
 
@@ -34,6 +36,107 @@ from .oai_project import (
 )
 from arkumu.oaipmh.models import OAIProjectMediaLink
 from arkumu.oaipmh.services import dcp_index
+
+
+# License cache key and TTL
+_LICENSE_CACHE_KEY = "oai:license_entities:all"
+_LICENSE_CACHE_TTL = 3600  # 1 hour
+
+# License predicate URIs (canonical)
+_LIZENZSTATUS_URI = "http://arkumu.org/data/properties/lizenzstatus"
+_LICENSE_PROPERTY_URIS = {
+    "uri": "http://arkumu.org/data/properties/uri",
+    "label_de": "http://arkumu.org/data/properties/deutscher-anzeigetext",
+    "label_en": "http://arkumu.org/data/properties/englischer-anzeigetext",
+    "name_de": "http://arkumu.org/data/properties/deutscher-name-der-lizenz",
+    "name_en": "http://arkumu.org/data/properties/englischer-name-der-lizenz",
+    "rights_statement": "http://arkumu.org/data/properties/zugehoeriges-rechtestatement",
+    "identifier": "http://arkumu.org/data/properties/digitales-objekt-lizenz-id",
+}
+
+
+def _load_all_licenses() -> Dict[UUID, ProjectDigitalObjectLicense]:
+    """Load all license entities from DB into a dict keyed by license resource ID."""
+    # Find all unique license entity IDs
+    license_triples = Triple.objects.filter(
+        predicate__canonical_uri=_LIZENZSTATUS_URI
+    ).values_list("object_id", flat=True).distinct()
+    license_ids = set(license_triples)
+
+    if not license_ids:
+        return {}
+
+    # Fetch all properties for these license entities
+    property_uris = list(_LICENSE_PROPERTY_URIS.values())
+    prop_filter = Q(predicate__canonical_uri__in=property_uris) | Q(predicate__uri__in=property_uris)
+    license_props = Triple.objects.filter(
+        subject_id__in=license_ids
+    ).filter(prop_filter).select_related("predicate", "object")
+
+    # Build license objects
+    props_by_license: Dict[UUID, Dict[str, str]] = defaultdict(dict)
+    for triple in license_props:
+        pred_uri = triple.predicate.canonical_uri or triple.predicate.uri
+        value = getattr(triple.object, "value", None)
+        if not value:
+            continue
+
+        # Map predicate URI to property name
+        for prop_name, prop_uri in _LICENSE_PROPERTY_URIS.items():
+            if pred_uri == prop_uri:
+                props_by_license[triple.subject_id][prop_name] = str(value)
+                break
+
+    result: Dict[UUID, ProjectDigitalObjectLicense] = {}
+    for license_id, props in props_by_license.items():
+        result[license_id] = ProjectDigitalObjectLicense(
+            uri=props.get("uri"),
+            label_de=props.get("label_de") or props.get("name_de"),
+            label_en=props.get("label_en") or props.get("name_en"),
+            rights_statement=props.get("rights_statement"),
+            identifier=props.get("identifier"),
+        )
+
+    return result
+
+
+def _get_cached_licenses() -> Dict[UUID, ProjectDigitalObjectLicense]:
+    """Get all licenses from Redis cache, loading from DB if needed."""
+    cached = cache.get(_LICENSE_CACHE_KEY)
+    if cached is not None:
+        return cached
+
+    licenses = _load_all_licenses()
+    cache.set(_LICENSE_CACHE_KEY, licenses, _LICENSE_CACHE_TTL)
+    return licenses
+
+
+def batch_fetch_licenses(resource_ids: Sequence[UUID]) -> Dict[UUID, ProjectDigitalObjectLicense]:
+    """Batch fetch licenses for digital objects.
+
+    Returns dict mapping digital_object_resource_id -> ProjectDigitalObjectLicense.
+    Uses Redis-cached license entities for fast lookup.
+    """
+    if not resource_ids:
+        return {}
+
+    # Get all licenses from cache
+    all_licenses = _get_cached_licenses()
+    if not all_licenses:
+        return {}
+
+    # Query lizenzstatus triples for these digital objects (one query)
+    lizenz_triples = Triple.objects.filter(
+        subject_id__in=list(resource_ids),
+        predicate__canonical_uri=_LIZENZSTATUS_URI,
+    ).values_list("subject_id", "object_id")
+
+    result: Dict[UUID, ProjectDigitalObjectLicense] = {}
+    for do_id, license_id in lizenz_triples:
+        if license_id in all_licenses:
+            result[do_id] = all_licenses[license_id]
+
+    return result
 
 
 def batch_fetch_curated_links(project_ids: Sequence[UUID]) -> Dict[UUID, List]:
@@ -804,6 +907,9 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
         normalized_code = (institution_code or "").lower().strip()
         is_s3_org = normalized_code in self._s3_orgs
 
+        # Batch fetch licenses for all digital objects (uses Redis cache)
+        licenses_by_id = batch_fetch_licenses(list(uuid_map.keys()))
+
         curated_objects: Dict[str, List[ProjectDigitalObject]] = {}
 
         # S3 orgs: use S3FileObject only
@@ -834,6 +940,9 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                 if not resource_uri and getattr(file_obj, "related_resource", None):
                     resource_uri = getattr(file_obj.related_resource, "uri", None)
 
+                # Get license from batch-fetched data
+                license_obj = licenses_by_id.get(rid_uuid)
+
                 project_obj = ProjectDigitalObject(
                     path=filename,
                     storage_key=file_obj.s3_key,
@@ -847,6 +956,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                     storage_status=file_obj.status,
                     resource_id=rid_str,
                     uri=resource_uri,
+                    license=license_obj,
                 )
                 setattr(project_obj, "_from_s3_file_object", True)
                 curated_objects.setdefault(rid_str, []).append(project_obj)
@@ -912,6 +1022,9 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
             if not resource_uri and s3_obj and getattr(s3_obj, "related_resource", None):
                 resource_uri = getattr(s3_obj.related_resource, "uri", None)
 
+            # Get license from batch-fetched data
+            license_obj = licenses_by_id.get(rid_uuid)
+
             if s3_obj:
                 fixity = parse_fixity(getattr(s3_obj, "sha256_checksum", None))
                 project_obj = ProjectDigitalObject(
@@ -927,6 +1040,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                     storage_status=s3_obj.status,
                     resource_id=rid_str,
                     uri=resource_uri,
+                    license=license_obj,
                 )
             else:
                 # Use checksum from Triple table for Rosetta orgs
@@ -943,6 +1057,7 @@ class OAIProjectBuilderTailored(OAIProjectBuilder):
                     checksum=fixity.digest if fixity else None,
                     checksum_algorithm=fixity.algorithm if fixity else None,
                     checksum_provenance="metadata" if fixity and fixity.digest else None,
+                    license=license_obj,
                 )
 
             setattr(project_obj, "_from_s3_file_object", True)

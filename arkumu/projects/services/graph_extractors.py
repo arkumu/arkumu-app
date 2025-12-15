@@ -51,6 +51,16 @@ class Predicates:
     FILE_PATH = "http://arkumu.org/data/properties/dateipfad"
     FILE_NAME = "http://arkumu.org/data/properties/dateiname"
     LICENSE = "http://arkumu.org/data/properties/deutscher-name-der-lizenz"
+    LICENSE_STATUS = "http://arkumu.org/data/properties/lizenzstatus"  # FK to license entity
+
+    # License entity properties
+    LICENSE_URI = "http://arkumu.org/data/properties/uri"
+    LICENSE_LABEL_DE = "http://arkumu.org/data/properties/deutscher-anzeigetext"
+    LICENSE_LABEL_EN = "http://arkumu.org/data/properties/englischer-anzeigetext"
+    LICENSE_NAME_DE = "http://arkumu.org/data/properties/deutscher-name-der-lizenz"
+    LICENSE_NAME_EN = "http://arkumu.org/data/properties/englischer-name-der-lizenz"
+    LICENSE_RIGHTS_STATEMENT = "http://arkumu.org/data/properties/zugehoeriges-rechtestatement"
+    LICENSE_IDENTIFIER = "http://arkumu.org/data/properties/digitales-objekt-lizenz-id"
 
     # Name lookups
     INSTITUTION_NAME = "http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule"
