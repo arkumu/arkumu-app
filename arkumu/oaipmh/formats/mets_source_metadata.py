@@ -220,6 +220,25 @@ def build_rdf_graph(
     def _node_info(node_id: str) -> Optional[Dict[str, Any]]:
         return nodes.get(node_id)
 
+    # Build set of (subject_uri, predicate) pairs that have entity links
+    # Used to skip redundant literals when entity links exist for same predicate
+    subject_predicate_with_entity: set[tuple[str, str]] = set()
+    for edge in edges:
+        subj_node = _node_info(edge.get("subject_id"))
+        obj_node = _node_info(edge.get("object_id"))
+        if not subj_node or not obj_node:
+            continue
+        if not _is_data_node(subj_node) or not _is_data_node(obj_node):
+            continue
+        subj_uri = subj_node.get("uri")
+        if use_institutional_predicates:
+            pred = edge.get("predicate_uri")
+        else:
+            pred = edge.get("predicate_canonical") or edge.get("predicate_uri")
+        normalized_pred = _normalize_predicate_uri(pred)
+        if subj_uri and normalized_pred:
+            subject_predicate_with_entity.add((subj_uri, normalized_pred))
+
     for edge in edges:
         subj_node = _node_info(edge.get("subject_id"))
         obj_node = _node_info(edge.get("object_id"))
@@ -267,6 +286,10 @@ def build_rdf_graph(
         subject_ref = rdflib.URIRef(subj_uri)
 
         if _is_literal(obj_node):
+            # Skip literal if entity links exist for the same subject+predicate
+            # (e.g., skip "93,106" literal when category entity links exist)
+            if (subj_uri, normalized_predicate) in subject_predicate_with_entity:
+                continue
             literal_value = obj_node.get("value") or ""
             # Strip invalid XML control characters (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F)
             literal_value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', literal_value)
