@@ -652,6 +652,32 @@ def _fetch_graphs_for_batch(
             for neighbor_id in junction_to_neighbors.get(junction_id, set()):
                 linked_to_projects[t.object_id].update(neighbor_to_projects.get(neighbor_id, set()))
 
+    # Query 5b: Fetch 3rd-degree entities for KHM equipmentart
+    # Equipment (19) links to Equipmentart (20) which has wikidata/gnd/aat IDs
+    # This is a special case - normally we stop at 2nd degree
+    third_degree_ids: Set[uuid.UUID] = set()
+    third_degree_triples = []
+
+    # Find equipmentart entities linked from equipment (in linked_triples)
+    for t in linked_triples:
+        if t.object and t.object.uri and '/20-equipmentart/' in t.object.uri:
+            third_degree_ids.add(t.object_id)
+
+    if third_degree_ids:
+        third_degree_triples = list(Triple.objects.filter(
+            subject_id__in=third_degree_ids
+        ).select_related('subject', 'predicate', 'object'))
+        logger.debug(
+            "Fetched %d 3rd-degree entities (equipmentart) with %d triples",
+            len(third_degree_ids), len(third_degree_triples)
+        )
+
+    # Build mapping: 3rd-degree entity -> projects (via linked entities)
+    third_degree_to_projects: Dict[uuid.UUID, Set[uuid.UUID]] = defaultdict(set)
+    for t in linked_triples:
+        if t.object_id in third_degree_ids:
+            third_degree_to_projects[t.object_id].update(linked_to_projects.get(t.subject_id, set()))
+
     # Group all triples by project
     triples_by_project: Dict[uuid.UUID, List[Triple]] = defaultdict(list)
     seen_by_project: Dict[uuid.UUID, Set[Tuple]] = defaultdict(set)
@@ -701,6 +727,11 @@ def _fetch_graphs_for_batch(
     # Assign linked entity triples
     for t in linked_triples:
         projects = linked_to_projects.get(t.subject_id, set())
+        _add_triple_to_projects(t, projects)
+
+    # Assign 3rd-degree entity triples (equipmentart)
+    for t in third_degree_triples:
+        projects = third_degree_to_projects.get(t.subject_id, set())
         _add_triple_to_projects(t, projects)
 
     # Build ProjectGraphs for each project
