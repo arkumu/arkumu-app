@@ -24,6 +24,13 @@ RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
 
 PROPERTY_NAMESPACE_PATTERN = re.compile(r"^(https?://arkumu\.org/data/)([^/]+/)?(properties/)")
 
+# Vocabulary predicates that should emit labels instead of URIs
+# Maps predicate suffix -> label predicate suffix to use
+VOCABULARY_LABEL_PREDICATES = {
+    "projektkategorie": "deutscher-name-der-projektkategorie-breadcrumb",
+    "ereignistyp": "deutscher-name-des-ereignistyps",
+}
+
 
 def _normalize_predicate_uri(uri: Optional[str]) -> Optional[str]:
     if not uri:
@@ -302,6 +309,37 @@ def build_rdf_graph(
         obj_uri = obj_node.get("uri")
         if not obj_uri:
             continue
+
+        # Check if this is a vocabulary predicate that should emit labels instead of URIs
+        vocab_label_predicate = VOCABULARY_LABEL_PREDICATES.get(local_name)
+        if vocab_label_predicate:
+            # Look up the label from edges where obj_uri is the subject
+            label_value = None
+            obj_id = edge.get("object_id")
+            for label_edge in edges:
+                if label_edge.get("subject_id") != obj_id:
+                    continue
+                label_pred = label_edge.get("predicate_canonical") or label_edge.get("predicate_uri") or ""
+                if vocab_label_predicate in label_pred:
+                    label_node = _node_info(label_edge.get("object_id"))
+                    if label_node and _is_literal(label_node):
+                        label_value = label_node.get("value")
+                        break
+
+            # Database fallback for weitereereignisse event types not in graph
+            if not label_value and obj_uri:
+                from arkumu.metadata.models.triples import Triple
+                label_triple = Triple.objects.filter(
+                    subject__uri=obj_uri,
+                    predicate__uri__endswith=vocab_label_predicate
+                ).select_related('object').first()
+                if label_triple and label_triple.object:
+                    label_value = label_triple.object.value
+
+            if label_value:
+                # Emit label as literal instead of URI reference
+                rdf_graph.add((subject_ref, predicate_ref, rdflib.Literal(label_value)))
+                continue
 
         rdf_graph.add((subject_ref, predicate_ref, rdflib.URIRef(obj_uri)))
 
