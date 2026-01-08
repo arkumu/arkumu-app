@@ -11,6 +11,9 @@ class OaipmhConfig(AppConfig):
     name = 'arkumu.oaipmh'
 
     def ready(self):
+        # Import signals for security audit logging
+        from . import signals  # noqa: F401
+
         # Preload caches in a thread to work around ASGI async context restriction
         # Use a blocking join to ensure cache is ready before first request
         thread = threading.Thread(target=self._warm_caches, daemon=True)

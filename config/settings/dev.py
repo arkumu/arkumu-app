@@ -84,6 +84,11 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        "arkumu.security": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
     },
 }
 
