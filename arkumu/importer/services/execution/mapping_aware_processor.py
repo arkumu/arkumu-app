@@ -292,14 +292,24 @@ class MappingAwareProcessor:
                                            dataset_config,
                                            csv_data: List[Dict[str, Any]],
                                            context: ProcessingContext) -> List:
-        """Process a chunk of dataset and return created entities (for streaming)"""
-        
+        """Process a chunk of dataset using two-phase bulk processing.
+
+        Phase 1 (Collect): Iterate all rows and collect entity URIs, rdf-type
+        data, property data (regular, anchor, multi-value), and FK queues into
+        in-memory lists — no database calls.
+
+        Phase 2 (Flush): Execute bulk database operations for entities,
+        rdf-type triples, and property triples.  External ontology and
+        relationship context columns are processed per-entity after bulk
+        creation since they depend on created resources.
+        """
+
         dataset_name = dataset_config.dataset_name
         logger.debug(f"Processing chunk for dataset: {dataset_name} ({len(csv_data)} rows)")
-        
+
         # Create mapping configuration for multi-value detection
         mapping_config = self._create_mapping_config_from_dataset(dataset_config)
-        
+
         # Prepare data with mapping configuration
         df = self.data_processor.prepare_for_processing(csv_data, mapping_config)
         if df.height == 0:
@@ -330,73 +340,154 @@ class MappingAwareProcessor:
             'junctions': 0,
             'junction_attrs': 0,
         })
-        
-        # Track entities created for this chunk
-        chunk_entities = []
+
         total_chunk_rows = df.height
-        
-        # Process each row as a complete entity
-        logger.debug(f"🔄 Processing {total_chunk_rows} entities in chunk for {dataset_name}")
-        
+        logger.debug(f"Phase 1: Collecting data from {total_chunk_rows} rows for {dataset_name}")
+
+        # ------------------------------------------------------------------
+        # Phase 1: Collect — iterate rows and gather all data, no DB calls
+        # ------------------------------------------------------------------
+
+        # Entity URIs and names for bulk creation (preserves insertion order)
+        entity_uri_data: List[Tuple[str, str]] = []
+        # Ordered list of (entity_uri, row_data) for Phase 2 per-entity work
+        row_entity_pairs: List[Tuple[str, Dict[str, Any]]] = []
+        # Aggregated property data across ALL rows for a single bulk call
+        all_property_data: List[Tuple[str, str, str]] = []  # (entity_uri, property_uri, value)
+        # Per-type counters for dataset statistics
+        regular_prop_count = 0
+        anchor_prop_count = 0
+        multi_value_items = 0
+        multi_value_cells = 0
+
         for row_idx, row_data in enumerate(df.iter_rows(named=True), 1):
-            # Log slow processing every 10 entities for detailed debugging
-            if row_idx % 10 == 0 and total_chunk_rows > 50:
-                logger.debug(f"🐌 Processing entity {row_idx}/{total_chunk_rows} for {dataset_name} (checking for slowdowns)")
-            
-            # Periodic FK queue status (every 100 rows for large datasets)
-            if row_idx % 100 == 0 and len(self.pending_relationships) > 0:
-                logger.info(f"🔗 FK Queue Status [{dataset_name}]: {len(self.pending_relationships)} total relationships queued (row {row_idx}/{total_chunk_rows})")
-            
             entity_uri = self._generate_entity_uri(dataset_name, row_data, dataset_config)
-            
-            # Create the main entity
-            entity_resource = self.resource_manager.create_entity_resource(entity_uri, dataset_name)
-            context.entity_cache[entity_uri] = entity_resource
-            chunk_entities.append(entity_resource)
-            # Metrics: one row processed and one resource created for entity
-            try:
-                self.statistics.current_metrics.rows_processed += 1
-                self.statistics.current_metrics.resources_created += 1
-            except Exception:
-                pass
-            
-            # Link entity to its type via rdf:type
-            self._create_rdf_type_relationship(entity_resource, dataset_name)
-            try:
-                # rdf:type is a relationship triple
-                self.statistics.current_metrics.relationships_created += 1
-                self.statistics.current_metrics.triples_created += 1
-            except Exception:
-                pass
-            
-            # Process regular columns
-            self._process_regular_columns(entity_resource, row_data, column_groups['regular'], context)
-            
-            # Process anchor columns
-            self._process_anchor_columns(entity_resource, row_data, column_groups['anchor'], context)
-            
-            # Process multi-value columns
-            multi_value_columns = column_groups['multi_value']
-            self._process_multi_value_columns(entity_resource, row_data, multi_value_columns, context)
-            
-            # Queue FK relationships for later resolution (includes multi-value FKs)
+            entity_id = entity_uri.split('/')[-1]
+            entity_uri_data.append((entity_uri, entity_id))
+            row_entity_pairs.append((entity_uri, row_data))
+
+            # Collect regular column properties
+            for column in column_groups['regular']:
+                value = row_data.get(column.column_name)
+                if value is not None and str(value).strip():
+                    property_uri = self._generate_property_uri(column.arkumu_type)
+                    all_property_data.append((entity_uri, property_uri, str(value).strip()))
+                    regular_prop_count += 1
+
+            # Collect anchor column properties
+            for column in column_groups['anchor']:
+                value = row_data.get(column.column_name)
+                if value is not None and str(value).strip():
+                    property_uri = self._generate_property_uri(column.arkumu_type)
+                    all_property_data.append((entity_uri, property_uri, str(value).strip()))
+                    anchor_prop_count += 1
+
+            # Collect multi-value column properties
+            for column in column_groups['multi_value']:
+                value = row_data.get(column.column_name)
+                if not value or not str(value).strip():
+                    continue
+                values = self._split_multi_value(str(value), column.multi_value_separator)
+                property_uri = self._generate_property_uri(column.arkumu_type)
+                cell_had_values = False
+                for single_value in values:
+                    if single_value.strip():
+                        all_property_data.append((entity_uri, property_uri, single_value.strip()))
+                        multi_value_items += 1
+                        cell_had_values = True
+                if cell_had_values:
+                    multi_value_cells += 1
+
+            # Queue FK relationships (pure in-memory, already no DB calls)
             all_fk_columns = column_groups['foreign_key'] + column_groups['multi_value_foreign_key']
             self._queue_fk_relationships(entity_uri, row_data, all_fk_columns, context)
-            
-            # Process external ontology columns
-            self._process_external_ontology_columns(entity_resource, row_data, column_groups['external_ontology'], context)
-            
-            # Process relationship context columns (as regular properties)
-            self._process_relationship_context_columns(entity_resource, row_data, column_groups['relationship_context'], context)
-            
-            # Track row processing
-            self.statistics.current_metrics.rows_processed += 1
-            dc['rows'] += 1
-            
-            # Log progress every 100 entities within chunk
+
+            # Log progress during collection
             if row_idx % 100 == 0:
-                logger.info(f"📊 Processed {row_idx}/{total_chunk_rows} entities in current chunk for {dataset_name}")
-        
+                logger.info(f"Phase 1: Collected {row_idx}/{total_chunk_rows} rows for {dataset_name}")
+
+        logger.debug(
+            f"Phase 1 complete for {dataset_name}: {len(entity_uri_data)} entities, "
+            f"{len(all_property_data)} property triples to create"
+        )
+
+        # ------------------------------------------------------------------
+        # Phase 2: Flush — bulk database operations
+        # ------------------------------------------------------------------
+
+        logger.debug(f"Phase 2: Bulk creating resources for {dataset_name}")
+
+        # 2a. Bulk create entity resources
+        entity_resource_map = self.resource_manager.create_entity_resources_from_uris_bulk(entity_uri_data)
+
+        # Populate entity cache and build ordered chunk_entities list
+        chunk_entities = []
+        for entity_uri, _ in entity_uri_data:
+            entity_resource = entity_resource_map.get(entity_uri)
+            if entity_resource:
+                context.entity_cache[entity_uri] = entity_resource
+                chunk_entities.append(entity_resource)
+
+        # 2b. Bulk create rdf:type relationship triples
+        if dataset_name in self.dataset_blueprints:
+            entity_type_resource = self.dataset_blueprints[dataset_name]['entity_type_resource']
+            rdf_type_uri = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+            rdf_type_data = [
+                (entity_resource, rdf_type_uri, entity_type_resource)
+                for entity_resource in chunk_entities
+            ]
+            if rdf_type_data:
+                self.resource_manager.create_relationship_triples_bulk(rdf_type_data)
+
+        # 2c. Bulk create all property triples (regular + anchor + multi-value)
+        if all_property_data:
+            # Resolve entity URIs to Resource objects for the bulk call
+            resolved_property_data = []
+            for entity_uri, property_uri, value in all_property_data:
+                entity_resource = entity_resource_map.get(entity_uri)
+                if entity_resource:
+                    resolved_property_data.append((entity_resource, property_uri, value))
+
+            if resolved_property_data:
+                self.resource_manager.create_property_triples_bulk(resolved_property_data)
+
+        # 2d. Process external ontology and relationship context per-entity
+        #     (these depend on created triple objects, not suitable for simple bulk)
+        has_ext_ontology = bool(column_groups['external_ontology'])
+        has_rel_context = bool(column_groups['relationship_context'])
+
+        if has_ext_ontology or has_rel_context:
+            for entity_uri, row_data in row_entity_pairs:
+                entity_resource = entity_resource_map.get(entity_uri)
+                if not entity_resource:
+                    continue
+                if has_ext_ontology:
+                    self._process_external_ontology_columns(
+                        entity_resource, row_data, column_groups['external_ontology'], context
+                    )
+                if has_rel_context:
+                    self._process_relationship_context_columns(
+                        entity_resource, row_data, column_groups['relationship_context'], context
+                    )
+
+        # ------------------------------------------------------------------
+        # Update statistics
+        # ------------------------------------------------------------------
+
+        dc['rows'] += total_chunk_rows
+        dc['props_regular'] += regular_prop_count
+        dc['props_anchor'] += anchor_prop_count
+        dc['props_multi_items'] += multi_value_items
+        dc['props_multi_cells'] += multi_value_cells
+
+        try:
+            self.statistics.current_metrics.rows_processed += total_chunk_rows
+            self.statistics.current_metrics.multi_value_items_created += multi_value_items
+            self.statistics.current_metrics.multi_value_cells_split += multi_value_cells
+            self.statistics.current_metrics.triples_created += len(all_property_data)
+        except Exception:
+            pass
+
         logger.debug(f"Processed chunk for {dataset_name}: created {len(chunk_entities)} entities")
         return chunk_entities
     

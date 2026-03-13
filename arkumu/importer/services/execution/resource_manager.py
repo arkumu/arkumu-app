@@ -399,6 +399,76 @@ class ResourceManager:
         
         return value_triples_to_create
     
+    def create_entity_resources_from_uris_bulk(self, entity_uri_data: List[Tuple[str, str]]) -> Dict[str, Resource]:
+        """
+        Create entity resources in bulk from pre-generated URIs, with stub resolution.
+
+        Args:
+            entity_uri_data: List of (entity_uri, entity_name) tuples
+
+        Returns:
+            Dict mapping entity URIs to Resource objects
+        """
+        if not entity_uri_data:
+            return {}
+
+        # Deduplicate within the batch
+        seen = {}
+        for uri, name in entity_uri_data:
+            if uri not in seen:
+                seen[uri] = name
+
+        uris_to_check = list(seen.keys())
+
+        # Check which resources already exist
+        existing_resources = self.get_existing_resources_bulk(uris_to_check)
+
+        # Resolve stubs: existing placeholder entities become real
+        stubs_resolved = 0
+        stubs_to_update = []
+        for uri, resource in existing_resources.items():
+            if resource.is_placeholder:
+                resource.is_placeholder = False
+                stubs_to_update.append(resource)
+                stubs_resolved += 1
+
+        if stubs_to_update:
+            Resource.objects.bulk_update(stubs_to_update, ['is_placeholder'], batch_size=500)
+            if self.statistics:
+                self.statistics.current_metrics.fk_stub_entities_resolved += stubs_resolved
+            logger.info(f"Resolved {stubs_resolved} stub entities to real entities")
+
+        # Prepare new resources
+        new_resources = []
+        for uri, name in seen.items():
+            if uri not in existing_resources:
+                new_resources.append(Resource(
+                    uri=uri,
+                    resource_type=ResourceType.ENTITY,
+                    name=name[:100] if len(name) > 100 else name,
+                    is_placeholder=False,
+                    organization=self.organization,
+                ))
+
+        final_map = dict(existing_resources)
+
+        if new_resources:
+            try:
+                Resource.objects.bulk_create(new_resources, ignore_conflicts=True, batch_size=500)
+                if self.statistics:
+                    self.statistics.increment_resources_created(len(new_resources))
+
+                # Fetch with database IDs
+                new_uris = [r.uri for r in new_resources]
+                created = {r.uri: r for r in Resource.objects.filter(uri__in=new_uris)}
+                final_map.update(created)
+            except Exception as e:
+                logger.error(f"Failed to bulk create entity resources from URIs: {e}", exc_info=True)
+                raise
+
+        logger.debug(f"Entity bulk from URIs: {len(new_resources)} new, {len(existing_resources)} existing, {stubs_resolved} stubs resolved")
+        return final_map
+
     def get_existing_resources_bulk(self, uris: List[str]) -> Dict[str, Resource]:
         """Efficiently fetch existing resources for a list of URIs."""
         existing = Resource.objects.filter(uri__in=uris).select_related()
@@ -724,6 +794,66 @@ class ResourceManager:
             logger.error(f"Failed to create relationship triple: {e}")
             raise
     
+    def create_relationship_triples_bulk(self, relationship_data: List[Tuple[Resource, str, Resource]]) -> List[Triple]:
+        """
+        Create relationship triples in bulk (subject -> property -> object resource).
+
+        Args:
+            relationship_data: List of (subject_resource, property_uri, object_resource) tuples
+
+        Returns:
+            List of created Triple objects
+        """
+        if not relationship_data:
+            return []
+
+        logger.debug(f"Creating {len(relationship_data)} relationship triples in bulk")
+
+        # Collect unique property URIs
+        property_uris = list({prop_uri for _, prop_uri, _ in relationship_data})
+
+        # Bulk create/fetch property resources
+        property_resources = self._create_property_resources_bulk(property_uris)
+
+        # Build triple objects
+        triples_to_create = []
+        for subject_resource, property_uri, object_resource in relationship_data:
+            property_resource = property_resources.get(property_uri)
+            if property_resource and subject_resource and object_resource:
+                triples_to_create.append(Triple(
+                    subject=subject_resource,
+                    predicate=property_resource,
+                    object=object_resource,
+                    source=self.organization,
+                    is_derived=False,
+                ))
+
+        if not triples_to_create:
+            return []
+
+        # Pre-filter existing triples
+        existing_count = self._filter_existing_triples(triples_to_create)
+        new_count = len(triples_to_create)
+
+        if new_count > 0:
+            try:
+                logger.debug(f"Creating {new_count} new relationship triples (filtered {existing_count} existing)")
+                Triple.objects.bulk_create(
+                    triples_to_create,
+                    ignore_conflicts=True,
+                    batch_size=500,
+                )
+                if self.statistics:
+                    self.statistics.current_metrics.triples_created += new_count
+                    self.statistics.current_metrics.relationships_created += new_count
+            except Exception as e:
+                logger.error(f"Failed to bulk create relationship triples: {e}", exc_info=True)
+                raise
+        else:
+            logger.debug(f"All {existing_count} relationship triples already exist, skipping")
+
+        return triples_to_create
+
     def create_owl_same_as_triple(self, subject_resource: Resource, object_resource: Resource) -> Triple:
         """Create an owl:sameAs triple for external ontology hard linking."""
         try:
