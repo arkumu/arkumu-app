@@ -45,9 +45,6 @@ services:
     command: /start
     networks:
       - arkumu_dev_network
-    dns:
-      - ${DNS_PRIMARY}
-      - ${DNS_SECONDARY}
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "${S3_HOSTNAME}:${S3_IP}"
@@ -132,9 +129,6 @@ services:
     command: /bin/sh -c "python manage.py run_huey"
     networks:
       - arkumu_dev_network
-    dns:
-      - ${DNS_PRIMARY}
-      - ${DNS_SECONDARY}
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "${S3_HOSTNAME}:${S3_IP}"
