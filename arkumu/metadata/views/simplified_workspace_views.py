@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from urllib.parse import urlsplit
 from typing import Any, Dict, List, Optional, Tuple, Union, Set
 
 from django import forms
@@ -49,6 +50,7 @@ from arkumu.users.models import Organization
 from arkumu.storage.models import S3FileObject
 from arkumu.metadata.models.resource import Resource, PublicAccessLevel
 from arkumu.common.mixins.base_coordinator import BaseCoordinatorMixin
+from arkumu.common.uri_utils import slugify_uri_part
 
 logger = logging.getLogger(__name__)
 
@@ -690,7 +692,7 @@ def _get_organization(request: HttpRequest) -> Optional[Organization]:
     organization = getattr(request.user, "organization", None)
 
     # If editing, extract org from URI
-    entity_uri = request.GET.get("uri", "")
+    entity_uri = request.GET.get("uri", "") or request.POST.get("entity_uri", "")
     if entity_uri and "/data/" in entity_uri:
         uri_parts = entity_uri.split("/")
         if len(uri_parts) >= 6 and uri_parts[3] == "data":
@@ -701,6 +703,49 @@ def _get_organization(request: HttpRequest) -> Optional[Organization]:
                 logger.info(f"Using organization from URI: {organization.code}")
 
     return organization
+
+
+def _extract_manifest(mapping: Mapping) -> Dict[str, Any]:
+    mapping_config = mapping.mapping_config or {}
+    promoted = mapping_config.get("promoted_manifest") or {}
+    if isinstance(promoted, dict):
+        promoted_manifest = promoted.get("schema_manifest")
+        if isinstance(promoted_manifest, dict) and promoted_manifest:
+            return promoted_manifest
+    schema_manifest = mapping_config.get("schema_manifest")
+    if isinstance(schema_manifest, dict):
+        return schema_manifest
+    return {}
+
+
+def _extract_entity_dataset_slug(entity_uri: str) -> str:
+    if not entity_uri:
+        return ""
+    path_parts = [part for part in urlsplit(entity_uri).path.split("/") if part]
+    try:
+        entities_index = path_parts.index("entities")
+    except ValueError:
+        return ""
+    if entities_index + 1 >= len(path_parts):
+        return ""
+    return slugify_uri_part(path_parts[entities_index + 1])
+
+
+def _resolve_dataset_name_from_uri(
+    schema_service: SchemaWorkspaceService,
+    *,
+    entity_uri: str,
+    fallback_dataset_name: str,
+) -> str:
+    dataset_slug = _extract_entity_dataset_slug(entity_uri)
+    if not dataset_slug:
+        return fallback_dataset_name
+
+    manifest = _extract_manifest(schema_service.mapping)
+    for dataset_name in manifest.keys():
+        if slugify_uri_part(dataset_name) == dataset_slug:
+            return dataset_name
+    return fallback_dataset_name
 
 
 def _select_active_mapping_for_organization(
@@ -718,6 +763,17 @@ def _select_active_mapping_for_organization(
     queryset = Mapping.objects.filter(organization_id=organization.code).order_by("-created_at")
     if not queryset.exists():
         return None
+
+    entity_uri = ""
+    if request is not None:
+        entity_uri = request.GET.get("uri", "") or request.POST.get("entity_uri", "")
+
+    dataset_slug = _extract_entity_dataset_slug(entity_uri)
+    if dataset_slug:
+        for mapping in queryset:
+            manifest = _extract_manifest(mapping)
+            if any(slugify_uri_part(dataset_name) == dataset_slug for dataset_name in manifest.keys()):
+                return mapping
 
     active_mapping = queryset.filter(is_active=True).first()
     if active_mapping:
@@ -1283,6 +1339,17 @@ def _build_tab_sections(
         )
 
     return tab_sections
+
+
+def _resolve_simplified_template_dataset_name(
+    dataset_name: str,
+    *,
+    fallback_dataset_name: str,
+) -> str:
+    """Use canonical simplified form templates for mapped datasets when needed."""
+    if dataset_name in SIMPLIFIED_SECTION_CONFIG:
+        return dataset_name
+    return fallback_dataset_name
 
 
 def _filter_field_metadata(
@@ -2172,8 +2239,16 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         if not entity_uri:
             return HttpResponseBadRequest("Missing uri parameter")
 
-        dataset_name = "Projekt"
-        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+        dataset_name = _resolve_dataset_name_from_uri(
+            schema_service,
+            entity_uri=entity_uri,
+            fallback_dataset_name="Projekt",
+        )
+        template_dataset_name = _resolve_simplified_template_dataset_name(
+            dataset_name,
+            fallback_dataset_name="Projekt",
+        )
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(template_dataset_name, [])
 
         # Get field metadata from schema
         field_metadata = schema_service.get_field_metadata(dataset_name)
@@ -2247,7 +2322,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         relationship_fields_sorted = [
             item for item in fields_with_metadata if item["meta"].get("is_join")
         ]
-        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+        tab_sections = _build_tab_sections(template_dataset_name, fields_with_metadata, relationship_fields_sorted)
         visibility_choices = _build_visibility_choices()
         current_visibility = _normalize_visibility_value(
             request.POST.get("visibility"),
@@ -2290,11 +2365,20 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         if not schema_service:
             return HttpResponseRedirect("/metadata/workspace/legacy/")
 
-        dataset_name = "Projekt"
         entity_uri = request.POST.get("entity_uri") or None
 
         if not entity_uri:
             return HttpResponseBadRequest("Missing entity_uri")
+
+        dataset_name = _resolve_dataset_name_from_uri(
+            schema_service,
+            entity_uri=entity_uri,
+            fallback_dataset_name="Projekt",
+        )
+        template_dataset_name = _resolve_simplified_template_dataset_name(
+            dataset_name,
+            fallback_dataset_name="Projekt",
+        )
 
         resource = Resource.objects.filter(uri=entity_uri).first()
 
@@ -2306,7 +2390,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
             dataset_name,
             field_metadata,
         )
-        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(template_dataset_name, [])
         field_metadata = _filter_field_metadata(field_metadata, visible_fields)
         join_field_map = {
             name: relationship
@@ -2331,7 +2415,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         relationship_fields_sorted = [
             item for item in fields_with_metadata if item["meta"].get("is_join")
         ]
-        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+        tab_sections = _build_tab_sections(template_dataset_name, fields_with_metadata, relationship_fields_sorted)
         visibility_choices = _build_visibility_choices()
         current_visibility = _normalize_visibility_value(
             request.POST.get("visibility"),
@@ -2965,8 +3049,16 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
         if not entity_uri:
             return HttpResponseBadRequest("Missing uri parameter")
 
-        dataset_name = "Ereignis"
-        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+        dataset_name = _resolve_dataset_name_from_uri(
+            schema_service,
+            entity_uri=entity_uri,
+            fallback_dataset_name="Ereignis",
+        )
+        template_dataset_name = _resolve_simplified_template_dataset_name(
+            dataset_name,
+            fallback_dataset_name="Ereignis",
+        )
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(template_dataset_name, [])
 
         # Get field metadata from schema
         field_metadata = schema_service.get_field_metadata(dataset_name)
@@ -3038,7 +3130,7 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
         relationship_fields_sorted = [
             item for item in fields_with_metadata if item["meta"].get("is_join")
         ]
-        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+        tab_sections = _build_tab_sections(template_dataset_name, fields_with_metadata, relationship_fields_sorted)
 
         # Render the form
         context = {
@@ -3067,11 +3159,20 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
         if not schema_service:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
-        dataset_name = "Ereignis"
         entity_uri = request.POST.get("entity_uri") or None
 
         if not entity_uri:
             return HttpResponseBadRequest("Missing entity_uri")
+
+        dataset_name = _resolve_dataset_name_from_uri(
+            schema_service,
+            entity_uri=entity_uri,
+            fallback_dataset_name="Ereignis",
+        )
+        template_dataset_name = _resolve_simplified_template_dataset_name(
+            dataset_name,
+            fallback_dataset_name="Ereignis",
+        )
 
         # Get field metadata and augment with joins (for relationship handling)
         field_metadata = schema_service.get_field_metadata(dataset_name)
@@ -3079,7 +3180,7 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
             dataset_name,
             field_metadata,
         )
-        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(template_dataset_name, [])
         field_metadata = _filter_field_metadata(field_metadata, visible_fields)
         join_field_map = {
             name: relationship
@@ -3104,7 +3205,7 @@ class SimplifiedEreignisEditView(LoginRequiredMixin, View):
         relationship_fields_sorted = [
             item for item in fields_with_metadata if item["meta"].get("is_join")
         ]
-        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+        tab_sections = _build_tab_sections(template_dataset_name, fields_with_metadata, relationship_fields_sorted)
 
         if form.is_valid():
             try:
@@ -3443,8 +3544,16 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
         if not entity_uri:
             return HttpResponseBadRequest("Missing uri parameter")
 
-        dataset_name = "AkteurIn"
-        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+        dataset_name = _resolve_dataset_name_from_uri(
+            schema_service,
+            entity_uri=entity_uri,
+            fallback_dataset_name="AkteurIn",
+        )
+        template_dataset_name = _resolve_simplified_template_dataset_name(
+            dataset_name,
+            fallback_dataset_name="AkteurIn",
+        )
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(template_dataset_name, [])
 
         # Get field metadata from schema
         field_metadata = schema_service.get_field_metadata(dataset_name)
@@ -3516,7 +3625,7 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
         relationship_fields_sorted = [
             item for item in fields_with_metadata if item["meta"].get("is_join")
         ]
-        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+        tab_sections = _build_tab_sections(template_dataset_name, fields_with_metadata, relationship_fields_sorted)
 
         # Render the form
         context = {
@@ -3545,18 +3654,27 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
         if not schema_service:
             return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
 
-        dataset_name = "AkteurIn"
         entity_uri = request.POST.get("entity_uri") or None
 
         if not entity_uri:
             return HttpResponseBadRequest("Missing entity_uri")
+
+        dataset_name = _resolve_dataset_name_from_uri(
+            schema_service,
+            entity_uri=entity_uri,
+            fallback_dataset_name="AkteurIn",
+        )
+        template_dataset_name = _resolve_simplified_template_dataset_name(
+            dataset_name,
+            fallback_dataset_name="AkteurIn",
+        )
 
         field_metadata = schema_service.get_field_metadata(dataset_name)
         field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
             dataset_name,
             field_metadata,
         )
-        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(template_dataset_name, [])
         field_metadata = _filter_field_metadata(field_metadata, visible_fields)
         join_field_map = {
             name: relationship
@@ -3580,7 +3698,7 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
         relationship_fields_sorted = [
             item for item in fields_with_metadata if item["meta"].get("is_join")
         ]
-        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+        tab_sections = _build_tab_sections(template_dataset_name, fields_with_metadata, relationship_fields_sorted)
 
         if form.is_valid():
             try:

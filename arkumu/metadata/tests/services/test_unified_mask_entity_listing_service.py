@@ -1,4 +1,5 @@
 import pytest
+from django.urls import reverse
 
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
 from arkumu.metadata.models.mappings import Mapping
@@ -6,6 +7,7 @@ from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import RDF_TYPE_URI
 from arkumu.metadata.services.unified_mask_entity_listing_service import (
+    ENTITY_LISTING_CONFIG,
     UnifiedMaskEntityListingService,
 )
 from arkumu.users.models import Organization
@@ -228,3 +230,21 @@ def test_list_entities_filters_by_search_query_and_exposes_summary_values():
     assert page.total_count == 1
     assert page.items[0].label == "Projekt Eins"
     assert "Folkwang" in page.items[0].summary
+
+
+def test_supported_entity_edit_routes_exist_for_unified_workspace():
+    expected_routes = {
+        "project": "metadata:edit_project",
+        "event": "metadata:edit_ereignis",
+        "actor": "metadata:edit_akteur",
+        "place": "metadata:edit_ort",
+        "digital_object": "metadata:edit_digital_object",
+    }
+    unsupported_entities = {"collection", "information_carrier", "keyword"}
+
+    for entity_type, route_name in expected_routes.items():
+        assert ENTITY_LISTING_CONFIG[entity_type].edit_url_name == route_name
+        assert reverse(route_name)
+
+    for entity_type in unsupported_entities:
+        assert ENTITY_LISTING_CONFIG[entity_type].edit_url_name is None

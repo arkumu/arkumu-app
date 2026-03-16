@@ -133,7 +133,7 @@ ENTITY_LISTING_CONFIG: Dict[str, EntityListingConfig] = {
         canonical_type_uri=CardURIs.DIGITAL_OBJECT_TYPE,
         label_predicate_uris=(CardURIs.DIGITAL_OBJECT_PATH,),
         summary_predicate_uris=(),
-        edit_url_name="metadata:edit_digitales_objekt",
+        edit_url_name="metadata:edit_digital_object",
     ),
 }
 

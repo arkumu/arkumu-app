@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.test import RequestFactory
 from django.urls import reverse
 from django.utils.text import slugify
 
@@ -12,6 +13,7 @@ from arkumu.metadata.constants import (
     ACTOR_EVENT_FLAG_CONTEXT_SPECS,
     ACTOR_EVENT_ROLE_CONTEXT_COLUMN,
 )
+from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.schema_workspace.services import JoinRelationship, RelationshipValues
 from arkumu.metadata.views import simplified_workspace_views
 from arkumu.metadata.models.resource import Resource, ResourceType, PublicAccessLevel
@@ -310,6 +312,29 @@ class DummyEreignisSchemaService(_BaseDummySchemaService):
         return []
 
 
+class DummyAkteurSchemaService(_BaseDummySchemaService):
+    """Stub service focused on AkteurIn dataset interactions."""
+
+    def __init__(self) -> None:
+        super().__init__("entities/hmt-akteurinnen/ACT-1")
+
+    def get_field_metadata(self, dataset_name: str):
+        return {
+            "Name (deutsch)": {
+                "column_name": "Name (deutsch)",
+                "property_label": "Name (deutsch)",
+                "is_multi_value": False,
+            }
+        }
+
+    def get_dataset_schema(self, dataset_name: str):
+        return {"properties": {}}
+
+    def load_entity_by_uri(self, dataset_name: str, entity_uri: str):
+        self.last_loaded_dataset_name = dataset_name
+        return {"Name (deutsch)": "Alex"}
+
+
 @pytest.fixture
 def user(db):
     organization = Organization.objects.create(code="test-org", name="Test Org")
@@ -356,6 +381,22 @@ def dummy_ereignis_service(monkeypatch):
         simplified_workspace_views,
         "_infer_entity_label",
         _label_stub,
+    )
+    return service
+
+
+@pytest.fixture
+def dummy_akteur_service(monkeypatch):
+    service = DummyAkteurSchemaService()
+    monkeypatch.setattr(
+        simplified_workspace_views,
+        "_get_schema_service",
+        lambda request: service,
+    )
+    monkeypatch.setattr(
+        simplified_workspace_views,
+        "_infer_entity_label",
+        lambda *args, **kwargs: "Actor Label",
     )
     return service
 
@@ -680,3 +721,125 @@ def test_event_post_updates_actor_participations(client, user, dummy_ereignis_se
     for column_label, values in flag_values.items():
         assert contexts[0][column_label] == values[0]
         assert contexts[1][column_label] == values[1]
+
+
+@pytest.mark.django_db
+def test_select_active_mapping_prefers_mapping_with_dataset_from_entity_uri():
+    organization = Organization.objects.create(code="hmt", name="HMT")
+    Mapping.objects.create(
+        name="Fallback Mapping",
+        organization_id=organization.code,
+        is_active=True,
+        mapping_config={
+            "schema_manifest": {
+                "Projekt": {
+                    "entity_type": {"canonical_uri": "http://example.org/project"},
+                }
+            }
+        },
+    )
+    expected_mapping = Mapping.objects.create(
+        name="HMT Projekte",
+        organization_id=organization.code,
+        is_active=False,
+        mapping_config={
+            "schema_manifest": {
+                "00 HFM Projekte": {
+                    "entity_type": {"canonical_uri": "http://example.org/project"},
+                }
+            }
+        },
+    )
+
+    request = RequestFactory().get(
+        reverse("metadata:edit_project"),
+        {"uri": "http://arkumu.org/data/hmt/entities/00-hfm-projekte/hfmt-tb-bib-94"},
+    )
+
+    selected = simplified_workspace_views._select_active_mapping_for_organization(
+        organization,
+        request,
+    )
+
+    assert selected == expected_mapping
+
+
+@pytest.mark.django_db
+def test_project_edit_resolves_dataset_name_from_entity_uri(client, user, dummy_service):
+    dummy_service.mapping.mapping_config = {
+        "schema_manifest": {
+            "00 HFM Projekte": {
+                "entity_type": {"canonical_uri": "http://example.org/project"},
+            }
+        }
+    }
+    dummy_service.entity_uri = "http://arkumu.org/data/hmt/entities/00-hfm-projekte/hfmt-tb-bib-94"
+    dummy_service.last_loaded_dataset_name = None
+    original_load = dummy_service.load_entity_by_uri
+
+    def _recording_load(dataset_name: str, entity_uri: str):
+        dummy_service.last_loaded_dataset_name = dataset_name
+        return original_load(dataset_name, entity_uri)
+
+    dummy_service.load_entity_by_uri = _recording_load
+
+    client.force_login(user)
+    response = client.get(
+        reverse("metadata:edit_project"),
+        {"uri": dummy_service.entity_uri},
+    )
+
+    assert response.status_code == 200
+    assert dummy_service.last_loaded_dataset_name == "00 HFM Projekte"
+    content = response.content.decode()
+    assert 'data-tab-group="project-sections"' in content
+    assert "Keine Formularabschnitte verf" not in content
+
+
+@pytest.mark.django_db
+def test_event_edit_resolves_dataset_name_from_entity_uri(client, user, dummy_ereignis_service):
+    dummy_ereignis_service.mapping.mapping_config = {
+        "schema_manifest": {
+            "01 HFM Ereignisse": {
+                "entity_type": {"canonical_uri": "http://example.org/event"},
+            }
+        }
+    }
+    dummy_ereignis_service.entity_uri = "http://arkumu.org/data/hmt/entities/01-hfm-ereignisse/EVT-1"
+    dummy_ereignis_service.last_loaded_dataset_name = None
+    original_load = dummy_ereignis_service.load_entity_by_uri
+
+    def _recording_load(dataset_name: str, entity_uri: str):
+        dummy_ereignis_service.last_loaded_dataset_name = dataset_name
+        return original_load(dataset_name, entity_uri)
+
+    dummy_ereignis_service.load_entity_by_uri = _recording_load
+
+    client.force_login(user)
+    response = client.get(
+        reverse("metadata:edit_ereignis"),
+        {"uri": dummy_ereignis_service.entity_uri},
+    )
+
+    assert response.status_code == 200
+    assert dummy_ereignis_service.last_loaded_dataset_name == "01 HFM Ereignisse"
+
+
+@pytest.mark.django_db
+def test_actor_edit_resolves_dataset_name_from_entity_uri(client, user, dummy_akteur_service):
+    dummy_akteur_service.mapping.mapping_config = {
+        "schema_manifest": {
+            "HMT Akteurinnen": {
+                "entity_type": {"canonical_uri": "http://example.org/actor"},
+            }
+        }
+    }
+    client.force_login(user)
+
+    response = client.get(
+        reverse("metadata:edit_akteur"),
+        {"uri": dummy_akteur_service.entity_uri},
+    )
+
+    assert response.status_code == 200
+    assert dummy_akteur_service.last_loaded_dataset_name == "HMT Akteurinnen"
