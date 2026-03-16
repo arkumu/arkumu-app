@@ -158,3 +158,31 @@ def test_mask_create_service_persists_event_and_requires_event_type(organization
         predicate__uri=ProjectURIs.EVENT_TYPE,
         object=event_type,
     ).exists()
+
+
+@pytest.mark.django_db
+def test_mask_create_service_persists_actor_and_requires_one_name(organization):
+    service = MaskCreateService(organization.code, "actor")
+
+    invalid = service.persist({})
+    assert invalid.success is False
+    assert invalid.field_errors == {
+        "name_de": "Mindestens einer der beiden Namen ist erforderlich.",
+        "name_en": "Mindestens einer der beiden Namen ist erforderlich.",
+    }
+
+    result = service.persist({"name_en": "John Doe"})
+    assert result.success is True
+    assert result.resource is not None
+    assert result.resource.name == "John Doe"
+
+    assert Triple.objects.filter(
+        subject=result.resource,
+        predicate__uri=RDF_TYPE_URI,
+        object__uri=CardURIs.ACTOR_TYPE,
+    ).exists()
+    assert Triple.objects.filter(
+        subject=result.resource,
+        predicate__uri="http://arkumu.org/data/properties/englischer-name",
+        object__value="John Doe",
+    ).exists()

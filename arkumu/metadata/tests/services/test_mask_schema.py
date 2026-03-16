@@ -2,9 +2,13 @@ from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
 from arkumu.metadata.services.mask_schema import (
     MappingBindingSource,
     MappingConfigBindingResolver,
+    build_actor_mask_schema,
     build_event_mask_schema,
+    build_place_mask_schema,
     build_project_mask_schema,
     field_is_visible_in_phase,
+    list_available_mask_schemas,
+    list_creatable_mask_schemas,
 )
 
 
@@ -110,6 +114,12 @@ def test_build_event_mask_schema_exposes_grails_requiredness_and_vocab():
     assert event_type_field.vocabulary.key == "event_types"
     assert field_is_visible_in_phase(event_type_field, "create") is True
 
+    name_field = schema.get_field("name")
+    assert name_field.required_rule.is_required is False
+    assert name_field.required_rule.frontend_grails_required is False
+    assert name_field.required_rule.backend_grails_required is False
+    assert field_is_visible_in_phase(name_field, "create") is True
+
     start_field = schema.get_field("start")
     assert start_field.required_rule.is_required is False
     assert start_field.required_rule.frontend_grails_required is False
@@ -117,3 +127,46 @@ def test_build_event_mask_schema_exposes_grails_requiredness_and_vocab():
     assert "Datumsformat" in (start_field.required_rule.source_detail or "")
     assert field_is_visible_in_phase(start_field, "create") is False
     assert field_is_visible_in_phase(start_field, "enrichment") is True
+
+
+def test_list_available_and_creatable_masks_are_separated():
+    available = {schema.entity_type for schema in list_available_mask_schemas()}
+    creatable = {schema.entity_type for schema in list_creatable_mask_schemas()}
+
+    assert {
+        "project",
+        "event",
+        "actor",
+        "place",
+        "collection",
+        "information_carrier",
+        "keyword",
+        "digital_object",
+    }.issubset(available)
+    assert creatable == {"project", "event", "actor"}
+
+
+def test_build_actor_mask_schema_supports_conditional_name_rule():
+    schema = build_actor_mask_schema()
+
+    assert schema.entity_type == "actor"
+    assert schema.create_supported is True
+    name_de = schema.get_field("name_de")
+    name_en = schema.get_field("name_en")
+
+    assert name_de.required_rule.kind == "conditional"
+    assert name_en.required_rule.kind == "conditional"
+    assert "mindestens eines" in (name_de.required_rule.source_detail or "").lower()
+    assert name_de.semantic_slot.canonical_property_uri == CardURIs.ACTOR_GERMAN_NAME
+
+
+def test_build_place_mask_schema_marks_coordinate_gap():
+    schema = build_place_mask_schema()
+
+    assert schema.entity_type == "place"
+    assert schema.create_supported is False
+    latitude = schema.get_field("latitude")
+
+    assert latitude.required_rule.is_required is True
+    assert latitude.semantic_slot.canonical_property_uri is None
+    assert "canonical model" in (latitude.required_rule.source_detail or "").lower()

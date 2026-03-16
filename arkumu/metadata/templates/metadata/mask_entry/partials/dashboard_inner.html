@@ -30,7 +30,7 @@
                   action="{% url 'metadata:mask_entry' %}"
                   hx-get="{% url 'metadata:mask_entry' %}"
                   hx-target="#mask-entry-root"
-                  hx-swap="outerHTML"
+                  hx-swap="innerHTML"
                   hx-push-url="true"
                   hx-indicator="#mask-entry-loading"
                   class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
@@ -43,7 +43,7 @@
                             hx-trigger="change"
                             hx-get="{% url 'metadata:mask_entry' %}"
                             hx-target="#mask-entry-root"
-                            hx-swap="outerHTML"
+                            hx-swap="innerHTML"
                             hx-push-url="true"
                             hx-include="[name='entity'],[name='phase']"
                             hx-indicator="#mask-entry-loading">
@@ -64,7 +64,7 @@
                             hx-trigger="change"
                             hx-get="{% url 'metadata:mask_entry' %}"
                             hx-target="#mask-entry-root"
-                            hx-swap="outerHTML"
+                            hx-swap="innerHTML"
                             hx-push-url="true"
                             hx-include="[name='organization'],[name='phase']"
                             hx-indicator="#mask-entry-loading">
@@ -85,7 +85,7 @@
                             hx-trigger="change"
                             hx-get="{% url 'metadata:mask_entry' %}"
                             hx-target="#mask-entry-root"
-                            hx-swap="outerHTML"
+                            hx-swap="innerHTML"
                             hx-push-url="true"
                             hx-include="[name='organization'],[name='entity']"
                             hx-indicator="#mask-entry-loading">

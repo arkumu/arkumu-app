@@ -22,6 +22,33 @@ MASK_PHASE_CREATE = "create"
 MASK_PHASE_ENRICHMENT = "enrichment"
 MASK_PHASE_ALL = "all"
 
+ACTOR_ENGLISH_NAME_URI = "http://arkumu.org/data/properties/englischer-name"
+PLACE_TYPE_URI = "http://arkumu.org/data/types/ort"
+PLACE_NAME_URI = "http://arkumu.org/data/properties/deutscher-name-des-ortes"
+WIKIDATA_ID_URI = "http://arkumu.org/data/properties/wikidata-id"
+GND_ID_URI = "http://arkumu.org/data/properties/gnd-nummer"
+VIAF_ID_URI = "http://arkumu.org/data/properties/viaf-id"
+COLLECTION_TYPE_URI = "http://arkumu.org/data/types/sammlung"
+COLLECTION_NAME_DE_URI = "http://arkumu.org/data/properties/deutscher-name-der-sammlung"
+COLLECTION_NAME_EN_URI = "http://arkumu.org/data/properties/englischer-name-der-sammlung"
+COLLECTION_KIND_URI = "http://arkumu.org/data/properties/sammlungsart"
+COLLECTION_DESCRIPTION_DE_URI = "http://arkumu.org/data/properties/deutsche-beschreibung"
+COLLECTION_DESCRIPTION_EN_URI = "http://arkumu.org/data/properties/englische-beschreibung"
+INFORMATION_CARRIER_TYPE_URI = "http://arkumu.org/data/types/informationstraeger"
+INFORMATION_CARRIER_KIND_URI = "http://arkumu.org/data/properties/informationstraegertyp"
+INFORMATION_CARRIER_NAME_DE_URI = "http://arkumu.org/data/properties/deutsche-produkt-bezeichnung"
+INFORMATION_CARRIER_NAME_EN_URI = "http://arkumu.org/data/properties/englische-produkt-bezeichnung"
+INFORMATION_CARRIER_LABEL_URI = "http://arkumu.org/data/properties/label-handelsmarke"
+INFORMATION_CARRIER_DESCRIPTION_DE_URI = "http://arkumu.org/data/properties/deutsche-beschreibung"
+INFORMATION_CARRIER_DESCRIPTION_EN_URI = "http://arkumu.org/data/properties/englische-beschreibung"
+INFORMATION_CARRIER_MATERIAL_URI = "http://arkumu.org/data/properties/materialschlagwort"
+KEYWORD_TYPE_URI = "http://arkumu.org/data/types/schlagwort"
+KEYWORD_LABEL_DE_URI = "http://arkumu.org/data/properties/deutsches-wikidata-label"
+DIGITAL_OBJECT_LICENSE_URI = "http://arkumu.org/data/properties/lizenzstatus"
+DIGITAL_OBJECT_MEDIA_TYPE_URI = "http://arkumu.org/data/properties/medientyp"
+DIGITAL_OBJECT_RETENTION_TYPE_URI = "http://arkumu.org/data/properties/erhaltungstyp"
+DIGITAL_OBJECT_ORIGIN_TYPE_URI = "http://arkumu.org/data/properties/entstehung"
+
 
 @dataclass(frozen=True)
 class RequiredRule:
@@ -116,6 +143,8 @@ class MaskSchema:
     label: str
     source: str
     sections: List[MaskSection]
+    create_supported: bool = False
+    create_redirect_url_name: Optional[str] = None
 
     def get_section(self, section_name: str) -> MaskSection:
         for section in self.sections:
@@ -235,7 +264,19 @@ def list_available_mask_schemas() -> List[MaskSchema]:
     return [
         build_project_mask_schema(),
         build_event_mask_schema(),
+        build_actor_mask_schema(),
+        build_place_mask_schema(),
+        build_collection_mask_schema(),
+        build_information_carrier_mask_schema(),
+        build_keyword_mask_schema(),
+        build_digital_object_mask_schema(),
     ]
+
+
+def list_creatable_mask_schemas() -> List[MaskSchema]:
+    """Return masks that can currently drive the productive create flow."""
+
+    return [schema for schema in list_available_mask_schemas() if schema.create_supported]
 
 
 def get_mask_schema(entity_type: str) -> MaskSchema:
@@ -468,6 +509,8 @@ def build_project_mask_schema() -> MaskSchema:
         label="Projekt",
         source="arkumu_project_pilot",
         sections=[overview, institution, classification],
+        create_supported=True,
+        create_redirect_url_name="metadata:edit_project",
     )
 
 
@@ -510,11 +553,12 @@ def build_event_mask_schema() -> MaskSchema:
                     canonical_property_uri=ProjectURIs.EVENT_NAME,
                 ),
                 placeholder="Bezeichnung des Ereignisses",
-                visibility=MASK_PHASE_ENRICHMENT,
+                visibility=MASK_PHASE_CREATE,
                 required_rule=RequiredRule(
                     kind="never",
                     frontend_grails_required=False,
                     backend_grails_required=False,
+                    source_detail="Digikunst Ereignis, name. Im Create Formular sichtbar, aber nicht als Pflichtfeld markiert. Im Backend ist das Feld nullable.",
                 ),
             ),
         ],
@@ -568,4 +612,625 @@ def build_event_mask_schema() -> MaskSchema:
         label="Ereignis",
         source="digikunst_grails_mask",
         sections=[overview, dates],
+        create_supported=True,
+        create_redirect_url_name="metadata:edit_ereignis",
+    )
+
+
+def build_actor_mask_schema() -> MaskSchema:
+    """Build the actor mask from Digikunst create intent and Arkumu slots."""
+
+    overview = MaskSection(
+        name="overview",
+        label="AkteurIn",
+        description="Minimaler Erfassungseinstieg mit den Namensfeldern.",
+        fields=[
+            MaskField(
+                name="name_de",
+                label="Name (DE)",
+                semantic_slot=SemanticSlot(
+                    slot_id="actor.name_de",
+                    canonical_property_uri=CardURIs.ACTOR_GERMAN_NAME,
+                ),
+                placeholder="Deutscher Name",
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="conditional",
+                    expression="name_de || name_en",
+                    source_detail="Digikunst Akteur, create. Mindestens eines von name_de oder name_en muss vorhanden sein. Die Regel wird ueber Validatoren ausgedrueckt, nicht ueber zwei separat markierte Pflichtfelder.",
+                ),
+            ),
+            MaskField(
+                name="name_en",
+                label="Name (EN)",
+                semantic_slot=SemanticSlot(
+                    slot_id="actor.name_en",
+                    canonical_property_uri=ACTOR_ENGLISH_NAME_URI,
+                ),
+                placeholder="Englischer Name",
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="conditional",
+                    expression="name_de || name_en",
+                    source_detail="Digikunst Akteur, create. Mindestens eines von name_de oder name_en muss vorhanden sein. Die Regel wird ueber Validatoren ausgedrueckt, nicht ueber zwei separat markierte Pflichtfelder.",
+                ),
+            ),
+        ],
+    )
+
+    identifiers = MaskSection(
+        name="identifiers",
+        label="Normdaten",
+        description="Externe Identifikatoren und kontrollierte Angaben fuer die spaetere Erweiterung.",
+        fields=[
+            MaskField(
+                name="gender",
+                label="Geschlecht",
+                semantic_slot=SemanticSlot(
+                    slot_id="actor.gender",
+                    canonical_property_uri="http://arkumu.org/data/properties/geschlecht",
+                ),
+                visibility=MASK_PHASE_ENRICHMENT,
+                required_rule=RequiredRule(
+                    kind="never",
+                    frontend_grails_required=False,
+                    backend_grails_required=False,
+                ),
+            ),
+            MaskField(
+                name="wikidata_id",
+                label="Wikidata-ID",
+                semantic_slot=SemanticSlot(
+                    slot_id="actor.wikidata_id",
+                    canonical_property_uri=WIKIDATA_ID_URI,
+                ),
+                placeholder="Q12345",
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+            MaskField(
+                name="gnd_id",
+                label="GND-Nummer",
+                semantic_slot=SemanticSlot(
+                    slot_id="actor.gnd_id",
+                    canonical_property_uri=GND_ID_URI,
+                ),
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+            MaskField(
+                name="viaf_id",
+                label="VIAF-ID",
+                semantic_slot=SemanticSlot(
+                    slot_id="actor.viaf_id",
+                    canonical_property_uri=VIAF_ID_URI,
+                ),
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+        ],
+    )
+
+    return MaskSchema(
+        schema_id="actor.digikunst",
+        entity_type="actor",
+        label="AkteurIn",
+        source="digikunst_grails_mask",
+        sections=[overview, identifiers],
+        create_supported=True,
+        create_redirect_url_name="metadata:edit_akteur",
+    )
+
+
+def build_place_mask_schema() -> MaskSchema:
+    """Build the place mask from Digikunst create intent and current Arkumu gaps."""
+
+    overview = MaskSection(
+        name="overview",
+        label="Ort",
+        description="Digikunst zeigt bereits beim Anlegen Namen, Kategorie und Koordinaten.",
+        fields=[
+            MaskField(
+                name="name_de",
+                label="Name (DE)",
+                semantic_slot=SemanticSlot(
+                    slot_id="place.name_de",
+                    canonical_property_uri=PLACE_NAME_URI,
+                ),
+                placeholder="Deutscher Ortsname",
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="conditional",
+                    expression="name_de unless wikidata_import",
+                    source_detail="Digikunst Ort, create. name_de ist erforderlich, ausser der Datensatz kommt aus dem Wikidata-Import.",
+                ),
+            ),
+            MaskField(
+                name="name_en",
+                label="Name (EN)",
+                semantic_slot=SemanticSlot(
+                    slot_id="place.name_en",
+                    canonical_property_uri=None,
+                    value_type="structured",
+                ),
+                placeholder="Englischer Ortsname",
+                visibility=MASK_PHASE_ENRICHMENT,
+                required_rule=RequiredRule(
+                    kind="conditional",
+                    expression="name_en unless wikidata_import",
+                    source_detail="Digikunst Ort, create. name_en ist erforderlich, ausser der Datensatz kommt aus dem Wikidata-Import. Im aktuellen Arkumu Canonical Model ist dafuer noch kein stabiler eigener Slot verdrahtet.",
+                ),
+            ),
+        ],
+    )
+
+    coordinates = MaskSection(
+        name="coordinates",
+        label="Koordinaten",
+        description="Pflichtfelder im Digikunst Ort-Formular.",
+        fields=[
+            MaskField(
+                name="latitude",
+                label="Latitude",
+                semantic_slot=SemanticSlot(
+                    slot_id="place.latitude",
+                    canonical_property_uri=None,
+                    value_type="structured",
+                ),
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                    source_detail="Digikunst Ort, create. latitude ist Pflichtfeld. Im aktuellen Arkumu Canonical Model ist noch kein stabiler kanonischer Koordinaten-Praedikat-Slot verdrahtet.",
+                ),
+            ),
+            MaskField(
+                name="longitude",
+                label="Longitude",
+                semantic_slot=SemanticSlot(
+                    slot_id="place.longitude",
+                    canonical_property_uri=None,
+                    value_type="structured",
+                ),
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                    source_detail="Digikunst Ort, create. longitude ist Pflichtfeld. Im aktuellen Arkumu Canonical Model ist noch kein stabiler kanonischer Koordinaten-Praedikat-Slot verdrahtet.",
+                ),
+            ),
+        ],
+    )
+
+    identifiers = MaskSection(
+        name="identifiers",
+        label="Normdaten",
+        description="Import- und Normdatenfelder fuer spaetere Erweiterung.",
+        fields=[
+            MaskField(
+                name="wikidata_id",
+                label="Wikidata-ID",
+                semantic_slot=SemanticSlot(
+                    slot_id="place.wikidata_id",
+                    canonical_property_uri=WIKIDATA_ID_URI,
+                ),
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+            MaskField(
+                name="gnd_id",
+                label="GND-Nummer",
+                semantic_slot=SemanticSlot(
+                    slot_id="place.gnd_id",
+                    canonical_property_uri=GND_ID_URI,
+                ),
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+            MaskField(
+                name="viaf_id",
+                label="VIAF-ID",
+                semantic_slot=SemanticSlot(
+                    slot_id="place.viaf_id",
+                    canonical_property_uri=VIAF_ID_URI,
+                ),
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+        ],
+    )
+
+    return MaskSchema(
+        schema_id="place.digikunst",
+        entity_type="place",
+        label="Ort",
+        source="digikunst_grails_mask",
+        sections=[overview, coordinates, identifiers],
+    )
+
+
+def build_collection_mask_schema() -> MaskSchema:
+    """Build the collection mask from Digikunst create requirements."""
+
+    overview = MaskSection(
+        name="overview",
+        label="Sammlung",
+        description="Der Digikunst Einstieg ist bereits relativ vollstaendig.",
+        fields=[
+            MaskField(
+                name="name_de",
+                label="Bezeichnung (DE)",
+                semantic_slot=SemanticSlot(
+                    slot_id="collection.name_de",
+                    canonical_property_uri=COLLECTION_NAME_DE_URI,
+                ),
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                ),
+            ),
+            MaskField(
+                name="name_en",
+                label="Bezeichnung (EN)",
+                semantic_slot=SemanticSlot(
+                    slot_id="collection.name_en",
+                    canonical_property_uri=COLLECTION_NAME_EN_URI,
+                ),
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                ),
+            ),
+            MaskField(
+                name="collection_type",
+                label="Sammlungsart",
+                semantic_slot=SemanticSlot(
+                    slot_id="collection.type",
+                    canonical_property_uri=COLLECTION_KIND_URI,
+                ),
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                ),
+            ),
+            MaskField(
+                name="description_de",
+                label="Beschreibung (DE)",
+                semantic_slot=SemanticSlot(
+                    slot_id="collection.description_de",
+                    canonical_property_uri=COLLECTION_DESCRIPTION_DE_URI,
+                ),
+                widget="textarea",
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                ),
+            ),
+            MaskField(
+                name="description_en",
+                label="Beschreibung (EN)",
+                semantic_slot=SemanticSlot(
+                    slot_id="collection.description_en",
+                    canonical_property_uri=COLLECTION_DESCRIPTION_EN_URI,
+                ),
+                widget="textarea",
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                ),
+            ),
+        ],
+    )
+
+    return MaskSchema(
+        schema_id="collection.digikunst",
+        entity_type="collection",
+        label="Sammlung",
+        source="digikunst_grails_mask",
+        sections=[overview],
+    )
+
+
+def build_information_carrier_mask_schema() -> MaskSchema:
+    """Build the information carrier mask."""
+
+    overview = MaskSection(
+        name="overview",
+        label="Informationsträger",
+        description="Im ersten Digikunst Schritt wird nur der Typ gesetzt, danach geht es direkt in die Erweiterung.",
+        fields=[
+            MaskField(
+                name="carrier_type",
+                label="Informationsträgertyp",
+                semantic_slot=SemanticSlot(
+                    slot_id="information_carrier.type",
+                    canonical_property_uri=INFORMATION_CARRIER_KIND_URI,
+                    value_type="relation",
+                    relation_target="information_carrier_type",
+                ),
+                widget="select",
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                ),
+                vocabulary=ControlledVocabularyRef(
+                    source_type="canonical",
+                    key="information_carrier_type",
+                    allow_free_text=False,
+                ),
+            ),
+        ],
+    )
+
+    enrichment = MaskSection(
+        name="enrichment",
+        label="Erweiterung",
+        description="Die restlichen Informationsträger-Felder erscheinen erst nach dem ersten Speichern.",
+        fields=[
+            MaskField(
+                name="name_de",
+                label="Produktbezeichnung (DE)",
+                semantic_slot=SemanticSlot(
+                    slot_id="information_carrier.name_de",
+                    canonical_property_uri=INFORMATION_CARRIER_NAME_DE_URI,
+                ),
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+            MaskField(
+                name="name_en",
+                label="Produktbezeichnung (EN)",
+                semantic_slot=SemanticSlot(
+                    slot_id="information_carrier.name_en",
+                    canonical_property_uri=INFORMATION_CARRIER_NAME_EN_URI,
+                ),
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+            MaskField(
+                name="label",
+                label="Label / Handelsmarke",
+                semantic_slot=SemanticSlot(
+                    slot_id="information_carrier.label",
+                    canonical_property_uri=INFORMATION_CARRIER_LABEL_URI,
+                ),
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+            MaskField(
+                name="description_de",
+                label="Beschreibung (DE)",
+                semantic_slot=SemanticSlot(
+                    slot_id="information_carrier.description_de",
+                    canonical_property_uri=INFORMATION_CARRIER_DESCRIPTION_DE_URI,
+                ),
+                widget="textarea",
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+            MaskField(
+                name="description_en",
+                label="Beschreibung (EN)",
+                semantic_slot=SemanticSlot(
+                    slot_id="information_carrier.description_en",
+                    canonical_property_uri=INFORMATION_CARRIER_DESCRIPTION_EN_URI,
+                ),
+                widget="textarea",
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+            MaskField(
+                name="material_keywords",
+                label="Materialschlagwort",
+                semantic_slot=SemanticSlot(
+                    slot_id="information_carrier.material_keyword",
+                    canonical_property_uri=INFORMATION_CARRIER_MATERIAL_URI,
+                    multi=True,
+                ),
+                widget="tags",
+                multi=True,
+                visibility=MASK_PHASE_ENRICHMENT,
+                required_rule=RequiredRule(
+                    kind="never",
+                    frontend_grails_required=False,
+                    backend_grails_required=True,
+                    source_detail="Digikunst Informationstraeger. materialschlagwort ist im Backend als erforderlich dokumentiert, aber nicht im ersten Create-Schritt sichtbar.",
+                ),
+            ),
+        ],
+    )
+
+    return MaskSchema(
+        schema_id="information_carrier.digikunst",
+        entity_type="information_carrier",
+        label="Informationsträger",
+        source="digikunst_grails_mask",
+        sections=[overview, enrichment],
+    )
+
+
+def build_keyword_mask_schema() -> MaskSchema:
+    """Build the keyword mask, including Arkumu gaps for non-canonical fields."""
+
+    overview = MaskSection(
+        name="overview",
+        label="Schlagwort",
+        description="Das Digikunst Create-Formular zeigt Label, Beschreibungen, Synonyme und Normdaten.",
+        fields=[
+            MaskField(
+                name="label_de",
+                label="Label (DE)",
+                semantic_slot=SemanticSlot(
+                    slot_id="keyword.label_de",
+                    canonical_property_uri=KEYWORD_LABEL_DE_URI,
+                ),
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="conditional",
+                    expression="label_de || label_en",
+                    source_detail="Digikunst Schlagwort. Mindestens eines von label_de oder label_en muss gesetzt sein.",
+                ),
+            ),
+            MaskField(
+                name="label_en",
+                label="Label (EN)",
+                semantic_slot=SemanticSlot(
+                    slot_id="keyword.label_en",
+                    canonical_property_uri=None,
+                    value_type="structured",
+                ),
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="conditional",
+                    expression="label_de || label_en",
+                    source_detail="Digikunst Schlagwort. Mindestens eines von label_de oder label_en muss gesetzt sein. Im aktuellen Arkumu Canonical Model ist dafuer noch kein eigener stabiler Slot verdrahtet.",
+                ),
+            ),
+            MaskField(
+                name="description_de",
+                label="Beschreibung (DE)",
+                semantic_slot=SemanticSlot(
+                    slot_id="keyword.description_de",
+                    canonical_property_uri=None,
+                    value_type="structured",
+                ),
+                widget="textarea",
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                    source_detail="Digikunst Schlagwort. description_de ist Pflichtfeld, aber im aktuellen Arkumu Canonical Model noch nicht als stabiler eigener Slot verdrahtet.",
+                ),
+            ),
+            MaskField(
+                name="description_en",
+                label="Beschreibung (EN)",
+                semantic_slot=SemanticSlot(
+                    slot_id="keyword.description_en",
+                    canonical_property_uri=None,
+                    value_type="structured",
+                ),
+                widget="textarea",
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                    source_detail="Digikunst Schlagwort. description_en ist Pflichtfeld, aber im aktuellen Arkumu Canonical Model noch nicht als stabiler eigener Slot verdrahtet.",
+                ),
+            ),
+            MaskField(
+                name="wikidata_id",
+                label="Wikidata-ID",
+                semantic_slot=SemanticSlot(
+                    slot_id="keyword.wikidata_id",
+                    canonical_property_uri=WIKIDATA_ID_URI,
+                ),
+                visibility=MASK_PHASE_ENRICHMENT,
+            ),
+        ],
+    )
+
+    return MaskSchema(
+        schema_id="keyword.digikunst",
+        entity_type="keyword",
+        label="Schlagwort",
+        source="digikunst_grails_mask",
+        sections=[overview],
+    )
+
+
+def build_digital_object_mask_schema() -> MaskSchema:
+    """Build the digital object mask from the upload-centric Digikunst create flow."""
+
+    upload = MaskSection(
+        name="upload",
+        label="Upload",
+        description="Der erste Schritt ist im Digikunst-Formular uploadzentriert.",
+        fields=[
+            MaskField(
+                name="file",
+                label="Datei",
+                semantic_slot=SemanticSlot(
+                    slot_id="digital_object.file",
+                    canonical_property_uri=CardURIs.DIGITAL_OBJECT_PATH,
+                ),
+                widget="file",
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                    source_detail="Digikunst DigitalesObjekt. Die erste Erfassung verlangt einen Upload und nicht nur einen Dateipfad-Textwert.",
+                ),
+            ),
+            MaskField(
+                name="media_type",
+                label="Medientyp",
+                semantic_slot=SemanticSlot(
+                    slot_id="digital_object.media_type",
+                    canonical_property_uri=DIGITAL_OBJECT_MEDIA_TYPE_URI,
+                ),
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                ),
+            ),
+            MaskField(
+                name="retention_type",
+                label="Erhaltungstyp",
+                semantic_slot=SemanticSlot(
+                    slot_id="digital_object.retention_type",
+                    canonical_property_uri=DIGITAL_OBJECT_RETENTION_TYPE_URI,
+                ),
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                ),
+            ),
+            MaskField(
+                name="origin_type",
+                label="Entstehungstyp",
+                semantic_slot=SemanticSlot(
+                    slot_id="digital_object.origin_type",
+                    canonical_property_uri=DIGITAL_OBJECT_ORIGIN_TYPE_URI,
+                ),
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="never",
+                    frontend_grails_required=False,
+                    backend_grails_required=False,
+                ),
+            ),
+            MaskField(
+                name="license_status",
+                label="Lizenzstatus",
+                semantic_slot=SemanticSlot(
+                    slot_id="digital_object.license_status",
+                    canonical_property_uri=DIGITAL_OBJECT_LICENSE_URI,
+                ),
+                visibility=MASK_PHASE_CREATE,
+                required_rule=RequiredRule(
+                    kind="always",
+                    frontend_grails_required=True,
+                    backend_grails_required=True,
+                ),
+            ),
+        ],
+    )
+
+    return MaskSchema(
+        schema_id="digital_object.digikunst",
+        entity_type="digital_object",
+        label="Digitales Objekt",
+        source="digikunst_grails_mask",
+        sections=[upload],
     )

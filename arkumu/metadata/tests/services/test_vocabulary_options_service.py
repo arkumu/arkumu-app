@@ -147,3 +147,66 @@ def test_build_metadata_option_map_fallback_label_and_sorting():
         (project.uri, "Projekt Alpha"),
         (unlabeled_project.uri, f"Unbekannter Eintrag ({unlabeled_project.uri})"),
     ]
+
+
+@pytest.mark.django_db
+def test_build_metadata_option_map_resolves_event_type_german_label():
+    organization = Organization.objects.create(name="Org", code="org")
+
+    type_uri = "http://arkumu.org/data/types/ereignistyp"
+    type_resource, _ = Resource.objects.get_or_create(
+        uri=type_uri,
+        defaults={
+            "canonical_uri": type_uri,
+            "resource_type": ResourceType.CLASS,
+        },
+    )
+
+    rdf_type_resource, _ = Resource.objects.get_or_create(
+        uri=RDF_TYPE_URI,
+        defaults={
+            "resource_type": ResourceType.PROPERTY,
+            "canonical_uri": RDF_TYPE_URI,
+        },
+    )
+
+    label_predicate_uri = "http://arkumu.org/data/properties/deutscher-name-des-ereignistyps"
+    label_predicate_resource, _ = Resource.objects.get_or_create(
+        uri=label_predicate_uri,
+        defaults={
+            "resource_type": ResourceType.PROPERTY,
+            "canonical_uri": label_predicate_uri,
+        },
+    )
+
+    event_type = Resource.objects.create(
+        uri="http://arkumu.org/data/org/entities/ereignistyp/1",
+        resource_type=ResourceType.ENTITY,
+        organization=organization,
+    )
+
+    label_resource = Resource.objects.create(
+        resource_type=ResourceType.LITERAL,
+        value="Ankauf",
+        organization=organization,
+    )
+
+    Triple.objects.create(
+        subject=event_type,
+        predicate=rdf_type_resource,
+        object=type_resource,
+        source=organization,
+    )
+    Triple.objects.create(
+        subject=event_type,
+        predicate=label_predicate_resource,
+        object=label_resource,
+        source=organization,
+    )
+
+    options = build_metadata_option_map(
+        {"event_type": type_uri},
+        organization=organization,
+    )
+
+    assert options["event_type"] == [(event_type.uri, "Ankauf")]

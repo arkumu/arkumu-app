@@ -31,6 +31,7 @@ from arkumu.metadata.services.mask_schema import (
     field_is_visible_in_phase,
     get_mask_schema,
     list_available_mask_schemas,
+    list_creatable_mask_schemas,
     load_mapping_sources_for_organization,
     normalize_mask_phase,
 )
@@ -342,7 +343,7 @@ class MaskCreateMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappin
 
     def _resolve_entity_type(self, request: HttpRequest) -> str:
         requested = (request.POST.get("entity") or request.GET.get("entity") or "").strip().lower()
-        available = {schema.entity_type for schema in list_available_mask_schemas()}
+        available = {schema.entity_type for schema in list_creatable_mask_schemas()}
         if requested in available:
             return requested
         return self.default_entity
@@ -396,7 +397,7 @@ class MaskCreateMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappin
         return {
             "organizations": list(self._organizations()),
             "selected_organization": service.organization.code,
-            "available_entities": list_available_mask_schemas(),
+            "available_entities": list_creatable_mask_schemas(),
             "entity_type": service.entity_type,
             "form_manifest": manifest,
             "form_sections": section_blocks,
@@ -411,6 +412,8 @@ class MaskCreateMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappin
             base_url = reverse("metadata:edit_project")
         elif entity_type == "event":
             base_url = reverse("metadata:edit_ereignis")
+        elif entity_type == "actor":
+            base_url = reverse("metadata:edit_akteur")
         else:
             raise ValueError(f"Unsupported entity type '{entity_type}'")
         return f"{base_url}?{urlencode({'uri': resource_uri})}"

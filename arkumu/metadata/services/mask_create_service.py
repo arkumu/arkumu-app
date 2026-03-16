@@ -16,6 +16,7 @@ from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import RDF_TYPE_URI
 from arkumu.metadata.services.mask_schema import (
+    ACTOR_ENGLISH_NAME_URI,
     MASK_PHASE_CREATE,
     MaskField,
     MaskSchema,
@@ -78,6 +79,12 @@ class EventCreateRecord:
     start: Optional[str] = None
     end: Optional[str] = None
     event_type: Optional[EventTypeValue] = None
+
+
+@dataclass(frozen=True)
+class ActorCreateRecord:
+    name_de: Optional[str] = None
+    name_en: Optional[str] = None
 
 
 class EventToTripleMapper(DataclassToTripleMapper):
@@ -167,6 +174,48 @@ class EventToTripleMapper(DataclassToTripleMapper):
         )
 
 
+class ActorToTripleMapper(DataclassToTripleMapper):
+    """Persist minimal actor resources."""
+
+    LITERAL_PREDICATES = {
+        "name_de": CardURIs.ACTOR_GERMAN_NAME,
+        "name_en": ACTOR_ENGLISH_NAME_URI,
+    }
+
+    def persist_actor(self, *, record: ActorCreateRecord, organization: Organization) -> Resource:
+        timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
+        slug_base = record.name_de or record.name_en or f"akteur-{timestamp}"
+        actor_slug = slugify_uri_part(slug_base) or f"akteur-{timestamp}"
+        actor_uri = mint_uri(self.base_uri, organization.code, "actors", actor_slug)
+
+        actor_resource = self._ensure_resource(
+            uri=actor_uri,
+            resource_type=ResourceType.ENTITY,
+            name=record.name_de or record.name_en,
+            organization=organization,
+        )
+        self._ensure_type_triple(actor_resource, CardURIs.ACTOR_TYPE, organization)
+
+        for attr, predicate_uri in self.LITERAL_PREDICATES.items():
+            value = getattr(record, attr)
+            if not value:
+                continue
+            predicate = self._ensure_property(predicate_uri, organization)
+            literal = Resource.objects.create(
+                resource_type=ResourceType.LITERAL,
+                value=value,
+                organization=organization,
+            )
+            Triple.objects.get_or_create(
+                subject=actor_resource,
+                predicate=predicate,
+                object=literal,
+                defaults={"source": organization, "is_derived": False},
+            )
+
+        return actor_resource
+
+
 class MaskCreateService:
     """Create objects from the create-phase mask."""
 
@@ -189,6 +238,7 @@ class MaskCreateService:
         base_uri = getattr(settings, self.BASE_URI_SETTING, DEFAULT_INSTITUTION_BASE_URI)
         self.project_mapper = DataclassToTripleMapper(base_uri)
         self.event_mapper = EventToTripleMapper(base_uri)
+        self.actor_mapper = ActorToTripleMapper(base_uri)
 
     def get_form_manifest(self) -> CreateFormManifest:
         sections: List[CreateSectionManifest] = []
@@ -239,6 +289,11 @@ class MaskCreateService:
                 field_errors[field.name] = "Pflichtfeld"
             cleaned_payload[field.name] = raw_value
 
+        if self.entity_type == "actor":
+            if not cleaned_payload.get("name_de") and not cleaned_payload.get("name_en"):
+                field_errors["name_de"] = "Mindestens einer der beiden Namen ist erforderlich."
+                field_errors["name_en"] = "Mindestens einer der beiden Namen ist erforderlich."
+
         if field_errors:
             return CreateResult(False, None, field_errors)
 
@@ -247,6 +302,8 @@ class MaskCreateService:
                 resource = self._persist_project(cleaned_payload)
             elif self.entity_type == "event":
                 resource = self._persist_event(cleaned_payload)
+            elif self.entity_type == "actor":
+                resource = self._persist_actor(cleaned_payload)
             else:
                 raise ValueError(f"Unsupported create entity '{self.entity_type}'")
 
@@ -286,6 +343,13 @@ class MaskCreateService:
             else None,
         )
         return self.event_mapper.persist_event(record=record, organization=self.organization)
+
+    def _persist_actor(self, payload: Dict[str, str]) -> Resource:
+        record = ActorCreateRecord(
+            name_de=self._clean(payload.get("name_de")),
+            name_en=self._clean(payload.get("name_en")),
+        )
+        return self.actor_mapper.persist_actor(record=record, organization=self.organization)
 
     def _resolve_options(self, field: MaskField) -> Sequence[Tuple[str, str]]:
         type_uri = self.TYPE_URIS_BY_FIELD_NAME.get(field.name)

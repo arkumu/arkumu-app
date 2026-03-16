@@ -215,6 +215,8 @@ def test_mask_entry_dashboard_returns_partial_for_htmx(client_logged_in, organiz
     assert "Mask Schema Preview" in body
     assert '<div id="mask-entry-root">' not in body
     assert "Maske laden" in body
+    assert 'hx-target="#mask-entry-root"' in body
+    assert 'hx-swap="innerHTML"' in body
 
 
 @pytest.mark.django_db
@@ -251,6 +253,7 @@ def test_mask_entry_dashboard_renders_event_mask_with_binding_inspector(client_l
     assert "Ereignis" in body
     assert "Ereignisübersicht" in body
     assert "Ereignistyp" in body
+    assert "Ereignisname" in body
     assert "Beginn" not in body
     assert "Digikunst-Notiz aus Grails-Analyse" in body
     assert "Arkumu Canonical Model" in body
@@ -278,6 +281,20 @@ def test_mask_entry_dashboard_renders_enrichment_fields_for_event(client_logged_
     assert "Beginn" in body
     assert "Ende" in body
     assert "Ereignistyp" not in body
+
+
+@pytest.mark.django_db
+def test_mask_entry_dashboard_renders_collection_mask(client_logged_in, organization):
+    response = client_logged_in.get(
+        reverse("metadata:mask_entry"),
+        {"organization": organization.code, "entity": "collection", "phase": "create"},
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Sammlung" in body
+    assert "Sammlungsart" in body
+    assert "Beschreibung (DE)" in body
 
 
 @pytest.mark.django_db
@@ -312,6 +329,56 @@ def test_mask_create_page_renders_project_create_fields(client_logged_in, organi
     assert "Projektart" in body
     assert "Folkwang Universität" in body
     assert "Untertitel" not in body
+
+
+@pytest.mark.django_db
+def test_mask_create_page_renders_event_name_and_type(client_logged_in, organization):
+    _create_typed_option(
+        organization=organization,
+        type_uri="http://arkumu.org/data/types/ereignistyp",
+        resource_uri="http://arkumu.org/data/fuk/entities/event-type/1",
+        label="Aufführung",
+        label_predicate_uri="http://arkumu.org/data/properties/deutscher-name-des-ereignistyps",
+    )
+
+    response = client_logged_in.get(
+        reverse("metadata:mask_create"),
+        {"organization": organization.code, "entity": "event"},
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Ereignistyp" in body
+    assert "Ereignisname" in body
+    assert "Beginn" not in body
+
+
+@pytest.mark.django_db
+def test_mask_create_page_lists_only_create_supported_entities(client_logged_in, organization):
+    response = client_logged_in.get(
+        reverse("metadata:mask_create"),
+        {"organization": organization.code, "entity": "actor"},
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "AkteurIn" in body
+    assert "Sammlung" not in body
+    assert "Informationsträger" not in body
+
+
+@pytest.mark.django_db
+def test_mask_create_page_renders_actor_name_fields(client_logged_in, organization):
+    response = client_logged_in.get(
+        reverse("metadata:mask_create"),
+        {"organization": organization.code, "entity": "actor"},
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Name (DE)" in body
+    assert "Name (EN)" in body
+    assert "Wikidata-ID" not in body
 
 
 @pytest.mark.django_db
@@ -370,3 +437,20 @@ def test_mask_create_post_creates_event_and_redirects_to_edit(client_logged_in, 
     assert response.status_code == 302
     assert reverse("metadata:edit_ereignis") in response["Location"]
     assert "uri=" in response["Location"]
+
+
+@pytest.mark.django_db
+def test_mask_create_post_creates_actor_and_redirects_to_edit(client_logged_in, organization):
+    response = client_logged_in.post(
+        reverse("metadata:mask_create"),
+        {
+            "organization": organization.code,
+            "entity": "actor",
+            "name_de": "Max Mustermann",
+        },
+    )
+
+    assert response.status_code == 302
+    assert reverse("metadata:edit_akteur") in response["Location"]
+    assert "uri=" in response["Location"]
+    assert Resource.objects.filter(name="Max Mustermann").exists()
