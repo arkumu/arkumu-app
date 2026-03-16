@@ -54,6 +54,8 @@ RUN apt-get update -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::
   graphviz \
   # entrypoint
   wait-for-it \
+  # drop root after entrypoint
+  gosu \
   # cleaning up unused files
   && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
   && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/archives/partial/*
@@ -84,5 +86,9 @@ USER django
 RUN DATABASE_URL="" \
   DJANGO_SETTINGS_MODULE="config.settings.test" \
   python manage.py compilemessages
+
+# Switch back to root so the entrypoint can fix /etc/resolv.conf permissions
+# before dropping to django via gosu.
+USER root
 
 ENTRYPOINT ["/entrypoint"]
