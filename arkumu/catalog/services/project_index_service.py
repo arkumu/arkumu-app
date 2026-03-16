@@ -730,6 +730,88 @@ class ProjectIndexService:
 
         raise NotImplementedError(f"Unsupported project index backend: {self.backend}")
 
+    def get_cards_page(
+        self,
+        *,
+        query: Optional[str] = None,
+        org_codes: Optional[List[str]] = None,
+        page: int,
+        page_size: int,
+        categories: Optional[List[str]] = None,
+        actors: Optional[List[str]] = None,
+        catchphrases: Optional[List[str]] = None,
+        year_from: Optional[int] = None,
+        year_to: Optional[int] = None,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Return one page of cards and the total match count.
+
+        The DB backend paginates before materializing card dictionaries. Other
+        backends fall back to full-list generation and in-memory slicing.
+        """
+        if self.backend != "db":
+            cards = self.get_cards(
+                query=query,
+                org_codes=org_codes,
+                categories=categories,
+                actors=actors,
+                catchphrases=catchphrases,
+                year_from=year_from,
+                year_to=year_to,
+            )
+            start_index = max(page - 1, 0) * page_size
+            end_index = start_index + page_size
+            return cards[start_index:end_index], len(cards)
+
+        base_qs = ProjectIndex.objects.filter(
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+        ).exclude(title__isnull=True).exclude(title='')
+
+        if org_codes:
+            base_qs = base_qs.filter(org_code__in=[c.lower().strip() for c in org_codes])
+
+        if query:
+            normalized_query = query.strip()
+            query_lower = normalized_query.lower()
+            q_filter = Q(title__icontains=normalized_query) | Q(subtitle__icontains=normalized_query)
+            for org_code, inst_name in ProjectIndex.ORG_CODE_TO_NAME.items():
+                if query_lower in inst_name.lower():
+                    q_filter |= Q(org_code=org_code)
+            base_qs = base_qs.filter(q_filter)
+
+        if categories:
+            base_qs = base_qs.filter(category_labels__overlap=categories)
+
+        if actors:
+            base_qs = base_qs.filter(actor_names__overlap=[a.strip() for a in actors])
+
+        if catchphrases:
+            base_qs = base_qs.filter(catchphrase_labels__overlap=[c.strip() for c in catchphrases])
+
+        if year_from is not None or year_to is not None:
+            start_year = year_from if year_from is not None else 1900
+            end_year = year_to if year_to is not None else 2100
+            year_range_list = list(range(start_year, end_year + 1))
+            base_qs = base_qs.filter(year_values__overlap=year_range_list)
+
+        total = base_qs.count()
+        start_index = max(page - 1, 0) * page_size
+        end_index = start_index + page_size
+        page_rows = list(base_qs.order_by("title")[start_index:end_index])
+
+        valid_paths = _get_valid_preview_paths()
+        cards = [entry.to_card_dict(valid_preview_paths=valid_paths) for entry in page_rows]
+        logger.info(
+            "ProjectIndexService[db]: materialized %d cards from %d total (query='%s', org_codes=%s, page=%s, page_size=%s)",
+            len(cards),
+            total,
+            (query or "").strip(),
+            org_codes,
+            page,
+            page_size,
+        )
+        return cards, total
+
     def get_card_by_uri(
         self,
         uri: str,
