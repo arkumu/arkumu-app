@@ -380,14 +380,17 @@ def test_get_renders_hidden_multi_value_field(client, user, dummy_service):
     )
     assert response.status_code == 200
     content = response.content.decode()
-    assert 'tabs tabs-bordered' in content
+    assert 'data-theme="corporate"' in content
+    assert 'max-w-screen-2xl' in content
+    assert 'data-tab-group="project-sections"' in content
+    assert 'flex-wrap' in content
+    assert 'max-w-xl' in content
     assert 'role="tab"' in content
     assert 'role="tabpanel"' in content
     assert 'Normdaten und Links' in content
     assert 'name="Projektart"' in content
     assert 'data-multi-value="true"' in content
     assert 'data-htmx-multi-select' not in content
-    assert 'id="relationship-container-Projektart"' in content
     assert 'name="Projektart[]"' in content
     assert 'name="Wikidata-ID"' in content
     assert 'name="Andere Normdaten"' in content
@@ -537,13 +540,14 @@ def test_get_renders_hidden_multi_value_field_for_ereignis(client, user, dummy_e
     )
     assert response.status_code == 200
     content = response.content.decode()
-    assert 'tabs tabs-bordered' in content
+    assert 'data-theme="corporate"' in content
+    assert 'data-tab-group="event-sections"' in content
+    assert 'flex-wrap' in content
     assert 'role="tab"' in content
     assert 'role="tabpanel"' in content
     assert 'name="Ereignistyp"' in content
     assert 'data-multi-value="true"' in content
     assert 'data-htmx-multi-select' not in content
-    assert 'id="relationship-container-Ereignistyp"' in content
     assert 'name="Ereignistyp[]"' in content
 
 

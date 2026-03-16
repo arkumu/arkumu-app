@@ -13,37 +13,54 @@
 
 {% with group=tab_group_name|default:"simplified-tabs" %}
   {% if sections %}
-    <div class="tabs tabs-bordered tabs-lg w-full overflow-x-auto rounded-2xl bg-base-200/60 p-2">
+    <div class="space-y-4" data-tab-group="{{ group }}">
+      <div class="rounded-2xl bg-base-200/70 p-2">
+        <div class="flex flex-wrap gap-2">
       {% for section in sections %}
         {% with tab_id=section.id|default:forloop.counter0|stringformat:"s" %}
           {% with input_id=group|add:"-"|add:tab_id panel_id="panel-"|add:tab_id %}
-            <input type="radio"
-                   id="{{ input_id }}"
-                   name="{{ group }}"
-                   role="tab"
-                   class="tab tab-lg font-semibold whitespace-nowrap px-6"
-                   aria-controls="{{ panel_id }}"
-                   aria-label="{{ section.title }}"
-                   {% if forloop.first %}checked{% endif %} />
+            <button type="button"
+                    id="{{ input_id }}"
+                    role="tab"
+                    class="btn btn-sm flex-none font-semibold whitespace-nowrap px-4 sm:px-5 {% if forloop.first %}btn-neutral{% else %}btn-ghost{% endif %}"
+                    aria-controls="{{ panel_id }}"
+                    aria-label="{{ section.title }}"
+                    aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"
+                    data-tab-trigger
+                    data-tab-target="{{ panel_id }}">
+              {{ section.title }}
+            </button>
+          {% endwith %}
+        {% endwith %}
+      {% endfor %}
+        </div>
+      </div>
+
+      <div class="space-y-4">
+      {% for section in sections %}
+        {% with tab_id=section.id|default:forloop.counter0|stringformat:"s" %}
+          {% with input_id=group|add:"-"|add:tab_id panel_id="panel-"|add:tab_id %}
             <div id="{{ panel_id }}"
                  role="tabpanel"
                  aria-labelledby="{{ input_id }}"
-                 class="tab-content bg-base-100 border border-base-300 rounded-2xl p-8 space-y-6 shadow-sm">
-              <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-2 border-b border-base-200">
+                 class="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm sm:p-5 lg:p-6 space-y-5"
+                 data-tab-panel
+                 {% if not forloop.first %}hidden{% endif %}>
+              <div class="flex flex-col gap-3 border-b border-base-200 pb-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h2 class="text-xl font-semibold tracking-tight">{{ section.title }}</h2>
+                  <h2 class="text-lg font-semibold tracking-tight sm:text-xl">{{ section.title }}</h2>
                   {% if section.description %}
                     <p class="text-sm text-base-content/70 mt-1 leading-relaxed">{{ section.description }}</p>
                   {% endif %}
                 </div>
                 {% if section.badge %}
-                  <span class="badge badge-outline badge-lg">{{ section.badge }}</span>
+                  <span class="badge badge-outline">{{ section.badge }}</span>
                 {% endif %}
               </div>
 
-              <div class="grid gap-6 lg:grid-cols-2">
+              <div class="grid auto-rows-fr gap-4 lg:grid-cols-2 2xl:grid-cols-3">
                 {% for item in section.fields %}
-                  <div class="form-control bg-base-200/30 border border-base-200 rounded-xl p-5 space-y-3">
+                  <div class="form-control h-full w-full max-w-xl justify-self-start rounded-xl border border-base-200 bg-base-200/20 p-4 space-y-3 sm:p-5">
                     <div class="flex items-start justify-between gap-3">
                       <label class="label p-0">
                         <span class="label-text font-semibold text-base">
@@ -95,6 +112,7 @@
           {% endwith %}
         {% endwith %}
       {% endfor %}
+      </div>
     </div>
   {% else %}
     <p class="text-sm text-base-content/70">Keine Formularabschnitte verfügbar.</p>

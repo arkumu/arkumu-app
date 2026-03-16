@@ -2,9 +2,9 @@
 {% load i18n %}
 
 {% block body %}
-<div class="min-h-screen bg-base-200 flex flex-col">
+<div class="min-h-screen bg-base-200 flex flex-col" data-theme="corporate">
   <main class="flex-grow">
-    <div class="container mx-auto px-4 pt-4">
+    <div class="mx-auto w-full max-w-screen-2xl px-3 pt-4 sm:px-4 lg:px-6">
       {% if messages %}
         {% for message in messages %}
           <div class="alert {% if message.tags == 'error' %}alert-error{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %} shadow-sm mb-4">
@@ -39,6 +39,40 @@
 {% block javascript %}{{ block.super }}
 <script>
   document.addEventListener('DOMContentLoaded', function () {
+    document
+      .querySelectorAll('[data-tab-group]')
+      .forEach(function (group) {
+        const triggers = Array.from(group.querySelectorAll('[data-tab-trigger]'));
+        const panels = Array.from(group.querySelectorAll('[data-tab-panel]'));
+        if (!triggers.length || !panels.length) {
+          return;
+        }
+
+        function activateTab(targetId) {
+          triggers.forEach(function (trigger) {
+            const isActive = trigger.getAttribute('data-tab-target') === targetId;
+            trigger.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            trigger.classList.toggle('btn-neutral', isActive);
+            trigger.classList.toggle('btn-ghost', !isActive);
+          });
+
+          panels.forEach(function (panel) {
+            panel.hidden = panel.id !== targetId;
+          });
+        }
+
+        triggers.forEach(function (trigger) {
+          trigger.addEventListener('click', function () {
+            activateTab(trigger.getAttribute('data-tab-target'));
+          });
+        });
+
+        const initialTrigger = triggers.find(function (trigger) {
+          return trigger.getAttribute('aria-selected') === 'true';
+        }) || triggers[0];
+        activateTab(initialTrigger.getAttribute('data-tab-target'));
+      });
+
     document
       .querySelectorAll('form[data-prevent-enter-submit="true"]')
       .forEach(function (form) {
