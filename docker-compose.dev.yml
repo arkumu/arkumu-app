@@ -25,6 +25,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    links:
+      - postgres:postgres
     volumes:
       - .:/app:z
       - ./compose/dev/django/start:/start:z
@@ -34,6 +36,7 @@ services:
       - ./.envs/.dev/.postgres
       - ./.envs/.dev/.docker
     environment:
+      POSTGRES_HOST: arkumu_dev_postgres
       WAIT_FOR_IT_TIMEOUT: ${WAIT_FOR_IT_TIMEOUT:-90}
       OAI_S3_ROSETTA_BASE_FUK: /rosetta/fudk/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_RSH: /rosetta/rsh/sandbox/input/arkumu/daten
@@ -79,7 +82,9 @@ services:
       retries: 12
       start_period: 20s
     networks:
-      - arkumu_dev_network
+      arkumu_dev_network:
+        aliases:
+          - postgres
 
   redis:
     image: "redis:latest"
@@ -112,6 +117,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    links:
+      - postgres:postgres
     volumes:
       - .:/app:z
       - ../arkumu-metadata:/arkumu-metadata:z
@@ -120,6 +127,7 @@ services:
       - ./.envs/.dev/.postgres
       - ./.envs/.dev/.docker
     environment:
+      POSTGRES_HOST: arkumu_dev_postgres
       WAIT_FOR_IT_TIMEOUT: ${WAIT_FOR_IT_TIMEOUT:-90}
       OAI_S3_ROSETTA_BASE_FUK: /rosetta/fudk/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_RSH: /rosetta/rsh/sandbox/input/arkumu/daten
