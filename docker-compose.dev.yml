@@ -36,7 +36,7 @@ services:
       - ./.envs/.dev/.postgres
       - ./.envs/.dev/.docker
     environment:
-      POSTGRES_HOST: arkumu_dev_postgres
+      POSTGRES_HOST: postgres
       WAIT_FOR_IT_TIMEOUT: ${WAIT_FOR_IT_TIMEOUT:-90}
       OAI_S3_ROSETTA_BASE_FUK: /rosetta/fudk/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_RSH: /rosetta/rsh/sandbox/input/arkumu/daten
@@ -127,7 +127,7 @@ services:
       - ./.envs/.dev/.postgres
       - ./.envs/.dev/.docker
     environment:
-      POSTGRES_HOST: arkumu_dev_postgres
+      POSTGRES_HOST: postgres
       WAIT_FOR_IT_TIMEOUT: ${WAIT_FOR_IT_TIMEOUT:-90}
       OAI_S3_ROSETTA_BASE_FUK: /rosetta/fudk/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_RSH: /rosetta/rsh/sandbox/input/arkumu/daten
