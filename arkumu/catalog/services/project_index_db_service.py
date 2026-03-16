@@ -18,7 +18,6 @@ from arkumu.metadata.models import PublicAccessLevel, Resource, ResourceType
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.oaipmh.formats.mets_source_metadata import build_rdf_graph
 from arkumu.projects import ProjectDigitalObject, ProjectRecord
-from arkumu.projects.services import ProjectSnapshotService
 from arkumu.projects.services.graph_service import get_all_project_graphs_batched
 
 logger = logging.getLogger(__name__)
@@ -549,6 +548,8 @@ class ProjectIndexDbService:
     """Materialize ProjectRecord data into derived DB-backed index tables."""
 
     def __init__(self, *, now=None) -> None:
+        from arkumu.projects.services import ProjectSnapshotService
+
         self.snapshot_service = ProjectSnapshotService()
         self.detail_service = ProjectDetailIndexService()
         self.now = now or timezone.now()
