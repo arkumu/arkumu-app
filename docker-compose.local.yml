@@ -58,7 +58,7 @@ services:
     env_file:
       - ./.envs/.local/.postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-debug} -d ${POSTGRES_DB:-arkumu} -h 127.0.0.1 -p 5432"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -h 127.0.0.1 -p 5432"]
       interval: 10s
       timeout: 5s
       retries: 12
