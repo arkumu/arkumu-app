@@ -1,4 +1,7 @@
+import pytest
+
 from arkumu.catalog.services.project_views import CardURIs, ProjectURIs
+from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.services.mask_schema import (
     MappingBindingSource,
     MappingConfigBindingResolver,
@@ -7,9 +10,40 @@ from arkumu.metadata.services.mask_schema import (
     build_place_mask_schema,
     build_project_mask_schema,
     field_is_visible_in_phase,
+    load_mapping_sources_for_organization,
     list_available_mask_schemas,
     list_creatable_mask_schemas,
 )
+from arkumu.users.models import Organization
+
+
+def _mapping_source_for_property(
+    *,
+    organization_code,
+    mapping_name,
+    dataset_name,
+    column_name,
+    canonical_property_uri,
+    canonical_property_label,
+):
+    return MappingBindingSource(
+        organization_code=organization_code,
+        mapping_name=mapping_name,
+        mapping_id=mapping_name,
+        mapping_config={
+            "workspace_columns": {
+                f"{organization_code}::{dataset_name}::{column_name}": {
+                    "dataset": dataset_name,
+                    "name": column_name,
+                    "is_multi_value": False,
+                    "canonical_mapping": {
+                        "canonical_property_uri": canonical_property_uri,
+                        "canonical_property_label": canonical_property_label,
+                    },
+                }
+            }
+        },
+    )
 
 
 def test_build_project_mask_schema_exposes_sections_and_required_title():
@@ -94,6 +128,131 @@ def test_mapping_binding_resolver_collects_bindings_from_multiple_mappings():
         ("mapping-a", "00_Projekte", "Titel"),
         ("mapping-b", "01_Grundereignis", "Titel des Projekts"),
     }
+
+
+def test_project_mask_stays_unified_while_bindings_vary_by_institution():
+    schema = build_project_mask_schema()
+    title_field = schema.get_field("title")
+    resolver = MappingConfigBindingResolver()
+    mapping_sources = [
+        _mapping_source_for_property(
+            organization_code="fuk",
+            mapping_name="fuk-projects",
+            dataset_name="00_Projekte",
+            column_name="Titel",
+            canonical_property_uri=CardURIs.TITLE,
+            canonical_property_label="Bevorzugter Titel",
+        ),
+        _mapping_source_for_property(
+            organization_code="hmt",
+            mapping_name="hmt-productions",
+            dataset_name="Produktionen",
+            column_name="Werktitel",
+            canonical_property_uri=CardURIs.TITLE,
+            canonical_property_label="Bevorzugter Titel",
+        ),
+        _mapping_source_for_property(
+            organization_code="khm",
+            mapping_name="khm-works",
+            dataset_name="Werke",
+            column_name="Bezeichnung",
+            canonical_property_uri=CardURIs.TITLE,
+            canonical_property_label="Bevorzugter Titel",
+        ),
+    ]
+
+    assert title_field.label == "Titel"
+    assert title_field.semantic_slot.slot_id == "project.preferred_title"
+    assert title_field.semantic_slot.canonical_property_uri == CardURIs.TITLE
+
+    fuk_bindings = resolver.resolve_field_bindings(
+        field=title_field,
+        organization_code="fuk",
+        mapping_sources=mapping_sources,
+    )
+    hmt_bindings = resolver.resolve_field_bindings(
+        field=title_field,
+        organization_code="hmt",
+        mapping_sources=mapping_sources,
+    )
+    khm_bindings = resolver.resolve_field_bindings(
+        field=title_field,
+        organization_code="khm",
+        mapping_sources=mapping_sources,
+    )
+
+    assert [(binding.dataset_name, binding.column_name) for binding in fuk_bindings] == [
+        ("00_Projekte", "Titel")
+    ]
+    assert [(binding.dataset_name, binding.column_name) for binding in hmt_bindings] == [
+        ("Produktionen", "Werktitel")
+    ]
+    assert [(binding.dataset_name, binding.column_name) for binding in khm_bindings] == [
+        ("Werke", "Bezeichnung")
+    ]
+
+
+@pytest.mark.django_db
+def test_load_mapping_sources_for_organization_returns_only_requested_org_mappings():
+    Organization.objects.create(name="Folkwang", code="fuk")
+    Organization.objects.create(name="HMT", code="hmt")
+    Organization.objects.create(name="KHM", code="khm")
+
+    Mapping.objects.create(
+        name="Folkwang Projects",
+        organization_id="fuk",
+        mapping_config={
+            "workspace_columns": {
+                "fuk::00_Projekte::Titel": {
+                    "dataset": "00_Projekte",
+                    "name": "Titel",
+                    "canonical_mapping": {
+                        "canonical_property_uri": CardURIs.TITLE,
+                        "canonical_property_label": "Bevorzugter Titel",
+                    },
+                }
+            }
+        },
+    )
+    Mapping.objects.create(
+        name="HMT Productions",
+        organization_id="hmt",
+        mapping_config={
+            "workspace_columns": {
+                "hmt::Produktionen::Werktitel": {
+                    "dataset": "Produktionen",
+                    "name": "Werktitel",
+                    "canonical_mapping": {
+                        "canonical_property_uri": CardURIs.TITLE,
+                        "canonical_property_label": "Bevorzugter Titel",
+                    },
+                }
+            }
+        },
+    )
+    Mapping.objects.create(
+        name="KHM Works",
+        organization_id="khm",
+        mapping_config={
+            "workspace_columns": {
+                "khm::Werke::Bezeichnung": {
+                    "dataset": "Werke",
+                    "name": "Bezeichnung",
+                    "canonical_mapping": {
+                        "canonical_property_uri": CardURIs.TITLE,
+                        "canonical_property_label": "Bevorzugter Titel",
+                    },
+                }
+            }
+        },
+    )
+
+    hmt_sources = load_mapping_sources_for_organization("hmt")
+
+    assert [(source.organization_code, source.mapping_name) for source in hmt_sources] == [
+        ("hmt", "HMT Productions")
+    ]
+    assert hmt_sources[0].mapping_config["workspace_columns"]["hmt::Produktionen::Werktitel"]["name"] == "Werktitel"
 
 
 def test_build_event_mask_schema_exposes_grails_requiredness_and_vocab():
