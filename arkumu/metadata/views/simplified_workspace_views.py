@@ -3518,6 +3518,128 @@ class SimplifiedAkteurEditView(LoginRequiredMixin, View):
 
         return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
 
+    def post(self, request: HttpRequest) -> HttpResponse:
+        """Save the edited akteur data."""
+        schema_service = _get_schema_service(request)
+        if not schema_service:
+            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
+
+        dataset_name = "AkteurIn"
+        entity_uri = request.POST.get("entity_uri") or None
+
+        if not entity_uri:
+            return HttpResponseBadRequest("Missing entity_uri")
+
+        field_metadata = schema_service.get_field_metadata(dataset_name)
+        field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
+            dataset_name,
+            field_metadata,
+        )
+        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
+        field_metadata = _filter_field_metadata(field_metadata, visible_fields)
+        join_field_map = {
+            name: relationship
+            for name, relationship in join_field_map.items()
+            if name in field_metadata
+        }
+
+        form = DatasetEntityForm(
+            request.POST,
+            field_metadata=field_metadata,
+            disable_anchors=True,
+        )
+
+        fields_with_metadata = _enrich_fk_metadata(
+            form=form,
+            field_metadata=field_metadata,
+            schema_service=schema_service,
+            dataset_name=dataset_name,
+            entity_uri=entity_uri,
+        )
+        relationship_fields_sorted = [
+            item for item in fields_with_metadata if item["meta"].get("is_join")
+        ]
+        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
+
+        if form.is_valid():
+            try:
+                entity_data = form.cleaned_entity_data()
+                entity_data = _normalize_plain_multi_value_fields(entity_data, field_metadata)
+                entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
+                    request,
+                    entity_data,
+                    field_metadata,
+                    join_field_map,
+                    entity_uri=entity_uri,
+                )
+
+                saved_uri, created = schema_service.save_entity(
+                    dataset_name=dataset_name,
+                    entity_data=entity_data,
+                    entity_uri=entity_uri,
+                )
+
+                for field_name, related_records in join_payloads.items():
+                    relationship = join_field_map.get(field_name)
+                    if relationship is None:
+                        continue
+                    schema_service.sync_join_relationship(
+                        entity_uri=saved_uri,
+                        relationship=relationship,
+                        related_items=related_records,
+                    )
+
+                for field_name, related_uris in multi_fk_payloads.items():
+                    meta = field_metadata.get(field_name, {})
+                    property_uri = meta.get("property_uri")
+                    if not property_uri:
+                        continue
+                    schema_service.save_multi_fk_relationship(
+                        entity_uri=saved_uri,
+                        property_uri=property_uri,
+                        related_uris=related_uris,
+                    )
+
+                logger.info(f"✅ Saved akteur: {saved_uri} (created={created})")
+                return _redirect_to_metadata_entry(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
+
+            except Exception as e:
+                logger.exception(f"❌ Error saving akteur: {e}")
+                context = {
+                    "form": form,
+                    "fields_with_metadata": fields_with_metadata,
+                    "tab_sections": tab_sections,
+                    "entity_uri": entity_uri,
+                    "dataset_name": dataset_name,
+                    "error": str(e),
+                    "title": "Akteur:in bearbeiten",
+                    "mapping_id": schema_service.mapping.id,
+                }
+                context["metadata_entry_return_url"] = _build_metadata_entry_url(
+                    schema_service.organization.code,
+                    self.metadata_entry_entity,
+                )
+                return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
+
+        logger.warning(f"Form validation failed: {form.errors}")
+        context = {
+            "form": form,
+            "fields_with_metadata": fields_with_metadata,
+            "tab_sections": tab_sections,
+            "entity_uri": entity_uri,
+            "dataset_name": dataset_name,
+            "title": "Akteur:in bearbeiten",
+            "mapping_id": schema_service.mapping.id,
+        }
+        context["metadata_entry_return_url"] = _build_metadata_entry_url(
+            schema_service.organization.code,
+            self.metadata_entry_entity,
+        )
+        return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
+
 
 class _SimplifiedDatasetMixin:
     dataset_name: str = ""
@@ -4015,136 +4137,6 @@ class SimplifiedEquipmentSoftwareEditView(_BaseSimplifiedEditView):
     template_name = "metadata/simplified_workspace/edit_equipment_software.html"
     page_title = "Equipment & Software bearbeiten"
     page_description = "Aktualisiere die wichtigsten Informationen zu dieser technischen Ressource."
-
-    def post(self, request: HttpRequest) -> HttpResponse:
-        """Save the edited akteur data."""
-        schema_service = _get_schema_service(request)
-        if not schema_service:
-            return _redirect_to_metadata_entry(entity=self.metadata_entry_entity)
-
-        dataset_name = "AkteurIn"
-        entity_uri = request.POST.get("entity_uri") or None
-
-        if not entity_uri:
-            return HttpResponseBadRequest("Missing entity_uri")
-
-        # Get field metadata and augment with joins (for relationship handling)
-        field_metadata = schema_service.get_field_metadata(dataset_name)
-        field_metadata, join_field_map = schema_service.augment_field_metadata_with_joins(
-            dataset_name,
-            field_metadata,
-        )
-        visible_fields = SIMPLIFIED_FIELD_CONFIG.get(dataset_name, [])
-        field_metadata = _filter_field_metadata(field_metadata, visible_fields)
-        join_field_map = {
-            name: relationship
-            for name, relationship in join_field_map.items()
-            if name in field_metadata
-        }
-
-        # Create form with POST data
-        form = DatasetEntityForm(
-            request.POST,
-            field_metadata=field_metadata,
-            disable_anchors=True,
-        )
-
-        fields_with_metadata = _enrich_fk_metadata(
-            form=form,
-            field_metadata=field_metadata,
-            schema_service=schema_service,
-            dataset_name=dataset_name,
-            entity_uri=entity_uri,
-        )
-        relationship_fields_sorted = [
-            item for item in fields_with_metadata if item["meta"].get("is_join")
-        ]
-        tab_sections = _build_tab_sections(dataset_name, fields_with_metadata, relationship_fields_sorted)
-
-        if form.is_valid():
-            try:
-                entity_data = form.cleaned_entity_data()
-                entity_data = _normalize_plain_multi_value_fields(entity_data, field_metadata)
-                entity_data, join_payloads, multi_fk_payloads = _collect_relationship_payloads(
-                    request,
-                    entity_data,
-                    field_metadata,
-                    join_field_map,
-                    entity_uri=entity_uri,
-                )
-
-                # Save entity (includes FK fields and relationships)
-                saved_uri, created = schema_service.save_entity(
-                    dataset_name=dataset_name,
-                    entity_data=entity_data,
-                    entity_uri=entity_uri,
-                )
-
-                for field_name, related_records in join_payloads.items():
-                    relationship = join_field_map.get(field_name)
-                    if relationship is None:
-                        continue
-                    schema_service.sync_join_relationship(
-                        entity_uri=saved_uri,
-                        relationship=relationship,
-                        related_items=related_records,
-                    )
-
-                for field_name, related_uris in multi_fk_payloads.items():
-                    meta = field_metadata.get(field_name, {})
-                    property_uri = meta.get("property_uri")
-                    if not property_uri:
-                        continue
-                    schema_service.save_multi_fk_relationship(
-                        entity_uri=saved_uri,
-                        property_uri=property_uri,
-                        related_uris=related_uris,
-                    )
-
-                logger.info(f"✅ Saved akteur: {saved_uri} (created={created})")
-
-                # Redirect back to metadata entry
-                return _redirect_to_metadata_entry(
-                    schema_service.organization.code,
-                    self.metadata_entry_entity,
-                )
-
-            except Exception as e:
-                logger.exception(f"❌ Error saving akteur: {e}")
-                # Re-render form with error
-                context = {
-                    "form": form,
-                    "fields_with_metadata": fields_with_metadata,
-                    "tab_sections": tab_sections,
-                    "entity_uri": entity_uri,
-                    "dataset_name": dataset_name,
-                    "error": str(e),
-                    "title": "Akteur:in bearbeiten",
-                    "mapping_id": schema_service.mapping.id,
-                }
-                context["metadata_entry_return_url"] = _build_metadata_entry_url(
-                    schema_service.organization.code,
-                    self.metadata_entry_entity,
-                )
-                return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
-
-        else:
-            # Form validation failed
-            logger.warning(f"Form validation failed: {form.errors}")
-            context = {
-                "form": form,
-                "fields_with_metadata": fields_with_metadata,
-                "tab_sections": tab_sections,
-                "entity_uri": entity_uri,
-                "dataset_name": dataset_name,
-                "title": "Akteur:in bearbeiten",
-                "mapping_id": schema_service.mapping.id,
-            }
-            context["metadata_entry_return_url"] = _build_metadata_entry_url(
-                schema_service.organization.code,
-                self.metadata_entry_entity,
-            )
-            return render(request, "metadata/simplified_workspace/edit_akteur.html", context)
 
 
 class SimplifiedAlternativerTitelCreateView(_BaseSimplifiedCreateView):

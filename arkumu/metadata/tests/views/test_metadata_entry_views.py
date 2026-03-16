@@ -1,11 +1,13 @@
 import pytest
 from django.contrib.auth import get_user_model
+from django.test import RequestFactory
 from django.urls import reverse
 
 from arkumu.catalog.services.project_views import CardURIs
 from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
+from arkumu.metadata.views import simplified_workspace_views
 from arkumu.metadata.services.canonical_graph_service import RDF_TYPE_URI
 from arkumu.users.models import Organization
 
@@ -33,6 +35,11 @@ def user(organization):
 def client_logged_in(client, user):
     client.force_login(user)
     return client
+
+
+@pytest.fixture
+def request_factory():
+    return RequestFactory()
 
 
 def _create_typed_option(*, organization, type_uri, resource_uri, label, label_predicate_uri):
@@ -198,6 +205,26 @@ def test_mask_entry_dashboard_renders_mask_and_binding_inspector(client_logged_i
 
 
 @pytest.mark.django_db
+def test_mask_entry_dashboard_renders_only_selected_section(client_logged_in, organization):
+    response = client_logged_in.get(
+        reverse("metadata:mask_entry"),
+        {
+            "organization": organization.code,
+            "entity": "project",
+            "phase": "create",
+            "section": "institution",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Institution" in body
+    assert "Feldname <code>institution__label</code>" in body
+    assert "Feldname <code>title</code>" not in body
+    assert "Feldname <code>project_type</code>" in body
+
+
+@pytest.mark.django_db
 def test_mask_entry_dashboard_returns_partial_for_htmx(client_logged_in, organization):
     url = reverse("metadata:mask_entry")
     response = client_logged_in.get(
@@ -324,11 +351,45 @@ def test_mask_create_page_renders_project_create_fields(client_logged_in, organi
     assert "Objekt anlegen" in body
     assert "Entitaet wechseln" in body
     assert "Sektionen" in body
-    assert "Titel" in body
+    assert 'name="title"' in body
     assert "Institution" in body
-    assert "Projektart" in body
+    assert 'name="institution__label"' in body
+    assert 'name="project_type"' in body
     assert "Folkwang Universität" in body
+    assert "Konzert" in body
     assert "Untertitel" not in body
+
+
+@pytest.mark.django_db
+def test_mask_create_page_keeps_section_anchor_selection(client_logged_in, organization):
+    _create_typed_option(
+        organization=organization,
+        type_uri="http://arkumu.org/data/types/einliefernde-hochschule",
+        resource_uri="http://arkumu.org/data/fuk/entities/institution/1",
+        label="Folkwang Universität",
+        label_predicate_uri="http://arkumu.org/data/properties/deutscher-name-der-einliefernden-hochschule",
+    )
+    _create_typed_option(
+        organization=organization,
+        type_uri="http://arkumu.org/data/types/projektart",
+        resource_uri="http://arkumu.org/data/fuk/entities/project-type/1",
+        label="Konzert",
+        label_predicate_uri="http://arkumu.org/data/properties/deutscher-name-der-projektart",
+    )
+
+    response = client_logged_in.get(
+        reverse("metadata:mask_create"),
+        {"organization": organization.code, "entity": "project", "section": "institution"},
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Institution" in body
+    assert 'name="institution__label"' in body
+    assert 'name="title"' in body
+    assert 'name="project_type"' in body
+    assert 'href="#section-institution"' in body
+    assert 'name="section" value="institution"' in body
 
 
 @pytest.mark.django_db
@@ -454,3 +515,23 @@ def test_mask_create_post_creates_actor_and_redirects_to_edit(client_logged_in, 
     assert reverse("metadata:edit_akteur") in response["Location"]
     assert "uri=" in response["Location"]
     assert Resource.objects.filter(name="Max Mustermann").exists()
+
+
+@pytest.mark.parametrize(
+    ("view_class", "entity"),
+    [
+        (simplified_workspace_views.SimplifiedProjectEditView, "projekt"),
+        (simplified_workspace_views.SimplifiedEreignisEditView, "ereignis"),
+        (simplified_workspace_views.SimplifiedAkteurEditView, "akteur"),
+    ],
+)
+@pytest.mark.django_db
+def test_simplified_edit_views_accept_post_dispatch(request_factory, user, monkeypatch, view_class, entity):
+    monkeypatch.setattr(simplified_workspace_views, "_get_schema_service", lambda request: None)
+    request = request_factory.post("/metadata/edit/test/")
+    request.user = user
+
+    response = view_class.as_view()(request)
+
+    assert response.status_code == 302
+    assert response["Location"]

@@ -7,6 +7,7 @@ from typing import List, TYPE_CHECKING, Union
 import uuid
 
 from django.db import transaction
+from django.db.models import Q
 
 from arkumu.common.uri_utils import mint_uri, slugify_uri_part
 from arkumu.importer.services.execution.resource_manager import ResourceManager
@@ -220,10 +221,16 @@ class EntityResource(BaseResource):
         Returns:
             List of property values (strings or EntityResources)
         """
-        # Get triples where this entity is the subject and property is the predicate
-        triples = Triple.objects.filter(
-            subject=self._resource,
-            predicate=property_resource._resource
+        predicate_filter = Q(predicate=property_resource._resource)
+        canonical_uri = property_resource._resource.canonical_uri
+        if canonical_uri:
+            predicate_filter |= Q(predicate__canonical_uri=canonical_uri)
+
+        triples = (
+            Triple.objects.filter(subject=self._resource)
+            .filter(predicate_filter)
+            .select_related("object")
+            .distinct()
         )
 
         results = []

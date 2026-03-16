@@ -1,30 +1,32 @@
-<div class="space-y-8">
-    <div class="rounded-box border border-base-300 bg-gradient-to-br from-base-200 via-base-100 to-base-200 p-6 shadow-sm">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <div class="badge badge-outline">{{ mask_schema.label }}</div>
-                    <div class="badge badge-neutral">{{ selected_organization|upper }}</div>
+<div class="mx-auto max-w-6xl space-y-6">
+    <div class="hero rounded-box border border-base-300 bg-gradient-to-br from-base-200 via-base-100 to-base-200 shadow-sm">
+        <div class="hero-content w-full flex-col items-stretch gap-6 p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="badge badge-outline">{{ mask_schema.label }}</div>
+                        <div class="badge badge-neutral">{{ selected_organization|upper }}</div>
+                    </div>
+                    <h1 class="mt-3 text-3xl font-bold tracking-tight">Mask Schema Preview</h1>
+                    <p class="mt-2 max-w-3xl text-sm text-base-content/70">
+                        Diese Seite trennt Maskenlogik, Digikunst-Evidenz, Arkumu-Semantik und Mappingstatus. Die Phase steuert, ob nur die Felder zum Anlegen oder die späteren Erweiterungsfelder gezeigt werden.
+                    </p>
                 </div>
-                <h1 class="mt-3 text-3xl font-bold tracking-tight">Mask Schema Preview</h1>
-                <p class="mt-2 max-w-3xl text-sm text-base-content/70">
-                    Diese Seite trennt Maskenlogik, Digikunst-Evidenz, Arkumu-Semantik und Mappingstatus. Die Phase steuert, ob nur die Felder zum Anlegen oder die späteren Erweiterungsfelder gezeigt werden.
-                </p>
-            </div>
-            <div class="grid grid-cols-2 gap-2 text-sm">
-                <div class="rounded-box border border-base-300 bg-base-100 px-4 py-3">
-                    <div class="text-xs uppercase tracking-wide text-base-content/50">Maske</div>
-                    <div class="mt-1 font-semibold">{{ mask_schema.label }}</div>
-                </div>
-                <div class="rounded-box border border-base-300 bg-base-100 px-4 py-3">
-                    <div class="text-xs uppercase tracking-wide text-base-content/50">Quelle</div>
-                    <div class="mt-1 font-semibold">{{ mask_schema.source }}</div>
+                <div class="stats stats-vertical shadow-sm lg:stats-horizontal">
+                    <div class="stat px-4 py-3">
+                        <div class="stat-title text-xs">Maske</div>
+                        <div class="stat-value text-lg">{{ mask_schema.label }}</div>
+                    </div>
+                    <div class="stat px-4 py-3">
+                        <div class="stat-title text-xs">Quelle</div>
+                        <div class="stat-value text-lg">{{ mask_schema.source }}</div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="card bg-base-100 border border-base-300 shadow">
+    <div class="card bg-base-100 border border-base-300 shadow-sm">
         <div class="card-body">
             <form method="get"
                   action="{% url 'metadata:mask_entry' %}"
@@ -33,81 +35,86 @@
                   hx-swap="innerHTML"
                   hx-push-url="true"
                   hx-indicator="#mask-entry-loading"
-                  class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-semibold">Organisation</span>
-                    </label>
-                    <select name="organization"
-                            class="select select-bordered"
-                            hx-trigger="change"
-                            hx-get="{% url 'metadata:mask_entry' %}"
-                            hx-target="#mask-entry-root"
-                            hx-swap="innerHTML"
-                            hx-push-url="true"
-                            hx-include="[name='entity'],[name='phase']"
-                            hx-indicator="#mask-entry-loading">
-                        {% for org in organizations %}
-                        <option value="{{ org.code }}" {% if org.code == selected_organization %}selected{% endif %}>
-                            {{ org.name }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
+                  class="space-y-4">
+                <input type="hidden" name="section" value="{{ selected_section }}">
+                <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text font-semibold">Organisation</span>
+                            </label>
+                            <select name="organization"
+                                    class="select select-bordered"
+                                    hx-trigger="change"
+                                    hx-get="{% url 'metadata:mask_entry' %}"
+                                    hx-target="#mask-entry-root"
+                                    hx-swap="innerHTML"
+                                    hx-push-url="true"
+                                    hx-include="[name='entity'],[name='phase'],[name='section']"
+                                    hx-indicator="#mask-entry-loading">
+                                {% for org in organizations %}
+                                <option value="{{ org.code }}" {% if org.code == selected_organization %}selected{% endif %}>
+                                    {{ org.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
 
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-semibold">Entität</span>
-                    </label>
-                    <select name="entity"
-                            class="select select-bordered"
-                            hx-trigger="change"
-                            hx-get="{% url 'metadata:mask_entry' %}"
-                            hx-target="#mask-entry-root"
-                            hx-swap="innerHTML"
-                            hx-push-url="true"
-                            hx-include="[name='organization'],[name='phase']"
-                            hx-indicator="#mask-entry-loading">
-                        {% for schema in available_entities %}
-                        <option value="{{ schema.entity_type }}" {% if schema.entity_type == entity_type %}selected{% endif %}>
-                            {{ schema.label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text font-semibold">Entität</span>
+                            </label>
+                            <select name="entity"
+                                    class="select select-bordered"
+                                    hx-trigger="change"
+                                    hx-get="{% url 'metadata:mask_entry' %}"
+                                    hx-target="#mask-entry-root"
+                                    hx-swap="innerHTML"
+                                    hx-push-url="true"
+                                    hx-include="[name='organization'],[name='phase'],[name='section']"
+                                    hx-indicator="#mask-entry-loading">
+                                {% for schema in available_entities %}
+                                <option value="{{ schema.entity_type }}" {% if schema.entity_type == entity_type %}selected{% endif %}>
+                                    {{ schema.label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
 
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-semibold">Phase</span>
-                    </label>
-                    <select name="phase"
-                            class="select select-bordered"
-                            hx-trigger="change"
-                            hx-get="{% url 'metadata:mask_entry' %}"
-                            hx-target="#mask-entry-root"
-                            hx-swap="innerHTML"
-                            hx-push-url="true"
-                            hx-include="[name='organization'],[name='entity']"
-                            hx-indicator="#mask-entry-loading">
-                        {% for phase in phase_options %}
-                        <option value="{{ phase.value }}" {% if phase.value == selected_phase %}selected{% endif %}>
-                            {{ phase.label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
+                        <div class="form-control">
+                            <label class="label">
+                                <span class="label-text font-semibold">Phase</span>
+                            </label>
+                            <select name="phase"
+                                    class="select select-bordered"
+                                    hx-trigger="change"
+                                    hx-get="{% url 'metadata:mask_entry' %}"
+                                    hx-target="#mask-entry-root"
+                                    hx-swap="innerHTML"
+                                    hx-push-url="true"
+                                    hx-include="[name='organization'],[name='entity'],[name='section']"
+                                    hx-indicator="#mask-entry-loading">
+                                {% for phase in phase_options %}
+                                <option value="{{ phase.value }}" {% if phase.value == selected_phase %}selected{% endif %}>
+                                    {{ phase.label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
 
-                <div class="form-control">
-                    <button type="submit" class="btn btn-primary">
-                        Maske laden
-                        <span id="mask-entry-loading" class="loading loading-spinner loading-sm htmx-indicator ml-2"></span>
-                    </button>
+                    <div class="form-control">
+                        <button type="submit" class="btn btn-primary">
+                            Maske laden
+                            <span id="mask-entry-loading" class="loading loading-spinner loading-sm htmx-indicator ml-2"></span>
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>
     </div>
 
-    <div class="stats stats-vertical lg:stats-horizontal shadow bg-base-100 border border-base-300 w-full">
+    <div class="stats stats-vertical border border-base-300 bg-base-100 shadow-sm lg:stats-horizontal">
         <div class="stat">
             <div class="stat-title">Maske</div>
             <div class="stat-value text-2xl">{{ mask_schema.label }}</div>
@@ -132,24 +139,42 @@
         </div>
     </div>
 
-    {% for block in mask_sections %}
-    <section class="card border border-base-300 bg-base-100 shadow">
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body gap-4">
+            <div class="text-xs font-semibold uppercase tracking-wide text-base-content/50">Sektionen</div>
+            <div class="overflow-x-auto">
+                <div class="join">
+                    {% for block in mask_sections %}
+                    <a
+                        href="?organization={{ selected_organization }}&entity={{ entity_type }}&phase={{ selected_phase }}&section={{ block.section.name }}"
+                        class="btn btn-sm join-item whitespace-nowrap {% if block.section.name == selected_section %}btn-neutral{% else %}btn-ghost{% endif %}"
+                    >
+                        {{ block.section.label }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if active_section %}
+    <section class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body space-y-6">
             <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                    <h2 class="card-title text-2xl">{{ block.section.label }}</h2>
-                    {% if block.section.description %}
-                    <p class="mt-1 text-sm text-base-content/70">{{ block.section.description }}</p>
+                    <h2 class="card-title text-2xl">{{ active_section.section.label }}</h2>
+                    {% if active_section.section.description %}
+                    <p class="mt-1 text-sm text-base-content/70">{{ active_section.section.description }}</p>
                     {% endif %}
                 </div>
                 <div class="flex flex-wrap gap-2">
-                    <div class="badge badge-outline">{{ block.fields|length }} Felder</div>
-                    <div class="badge badge-ghost">Maskentextquelle <code>{{ block.section.presentation_source }}</code></div>
+                    <div class="badge badge-outline">{{ active_section.fields|length }} Felder</div>
+                    <div class="badge badge-ghost">Maskentextquelle <code>{{ active_section.section.presentation_source }}</code></div>
                 </div>
             </div>
 
             <div class="space-y-4">
-                {% for item in block.fields %}
+                {% for item in active_section.fields %}
                 <div class="rounded-box border border-base-300 bg-base-100 p-5 shadow-sm">
                     <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div>
@@ -182,8 +207,8 @@
                         </div>
                     </div>
 
-                    <div class="mt-4 grid gap-4 xl:grid-cols-3">
-                        <div class="rounded-box border border-base-300 bg-base-50 p-4">
+                    <div class="mt-4 grid auto-rows-fr gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                        <div class="rounded-box h-full border border-base-300 bg-base-50 p-4">
                             <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-base-content/50">Maske</div>
                             <dl class="space-y-2 text-sm">
                                 <div class="flex items-start justify-between gap-3">
@@ -208,7 +233,7 @@
                             </dl>
                         </div>
 
-                        <div class="rounded-box border border-base-300 bg-base-50 p-4">
+                        <div class="rounded-box h-full border border-base-300 bg-base-50 p-4">
                             <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-base-content/50">Digikunst Evidenz</div>
                             <dl class="space-y-2 text-sm">
                                 <div class="flex items-start justify-between gap-3">
@@ -231,7 +256,7 @@
                             {% endif %}
                         </div>
 
-                        <div class="rounded-box border border-base-300 bg-base-50 p-4">
+                        <div class="rounded-box h-full border border-base-300 bg-base-50 p-4">
                             <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-base-content/50">Arkumu Semantik</div>
                             <dl class="space-y-2 text-sm">
                                 <div class="flex items-start justify-between gap-3">
@@ -310,7 +335,7 @@
             </div>
         </div>
     </section>
-    {% endfor %}
+    {% endif %}
 </div>
 
 {{ navbar_metadata_entry_link|safe }}

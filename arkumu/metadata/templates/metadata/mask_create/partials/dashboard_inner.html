@@ -1,118 +1,139 @@
-<div class="space-y-8">
-    <div class="rounded-box border border-base-300 bg-gradient-to-br from-base-200 via-base-100 to-base-200 p-6 shadow-sm">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <div class="badge badge-outline">{{ form_manifest.label }}</div>
-                    <div class="badge badge-primary">Anlegen</div>
-                    <div class="badge badge-neutral">{{ selected_organization|upper }}</div>
+<div class="mx-auto max-w-6xl space-y-6">
+    <div class="hero rounded-box border border-base-300 bg-gradient-to-br from-base-200 via-base-100 to-base-200 shadow-sm">
+        <div class="hero-content w-full flex-col items-stretch gap-6 p-6">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="badge badge-outline">{{ form_manifest.label }}</div>
+                        <div class="badge badge-primary">Anlegen</div>
+                        <div class="badge badge-neutral">{{ selected_organization|upper }}</div>
+                    </div>
+                    <h1 class="mt-3 text-3xl font-bold tracking-tight">Objekt anlegen</h1>
+                    <p class="mt-2 max-w-3xl text-sm text-base-content/70">
+                        Diese Seite verwendet die Pflichtfelder der Maskenlogik als produktiven Erfassungseinstieg. Nach dem Speichern geht es direkt in die bestehende Bearbeitungsansicht zur Erweiterung.
+                    </p>
                 </div>
-                <h1 class="mt-3 text-3xl font-bold tracking-tight">Objekt anlegen</h1>
-                <p class="mt-2 max-w-3xl text-sm text-base-content/70">
-                    Diese Seite verwendet die Pflichtfelder der Maskenlogik als produktiven Erfassungseinstieg. Nach dem Speichern geht es direkt in die bestehende Bearbeitungsansicht zur Erweiterung.
-                </p>
             </div>
-            <form method="get" class="rounded-box border border-base-300 bg-base-100 p-4 text-sm">
-                <input type="hidden" name="entity" value="{{ entity_type }}">
-                <div class="text-xs uppercase tracking-wide text-base-content/50">Organisation</div>
-                <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
-                    <label class="form-control">
-                        <span class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/50">Aktive Organisation</span>
-                        <select name="organization" class="select select-bordered min-w-52">
+
+            <div class="navbar rounded-box border border-base-300 bg-base-100 px-4 py-3">
+                <div class="navbar-start">
+                    <div>
+                        <div class="text-xs font-semibold uppercase tracking-wide text-base-content/50">Organisation</div>
+                        <div class="text-sm text-base-content/70">Aktive Erfassungsumgebung</div>
+                    </div>
+                </div>
+                <div class="navbar-end">
+                    <form method="get" class="join join-vertical sm:join-horizontal">
+                        <input type="hidden" name="entity" value="{{ entity_type }}">
+                        <select name="organization" class="select select-bordered join-item min-w-56">
                             {% for org in organizations %}
                             <option value="{{ org.code }}" {% if org.code == selected_organization %}selected{% endif %}>
                                 {{ org.name }}
                             </option>
                             {% endfor %}
                         </select>
-                    </label>
-                    <button type="submit" class="btn btn-outline">Wechseln</button>
+                        <button type="submit" class="btn btn-outline join-item">Wechseln</button>
+                    </form>
                 </div>
-            </form>
+            </div>
         </div>
     </div>
 
-    <div class="card border border-base-300 bg-base-100 shadow">
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body gap-6">
             <div class="space-y-3">
                 <div class="text-xs font-semibold uppercase tracking-wide text-base-content/50">Entitaet wechseln</div>
-                <div class="tabs tabs-boxed bg-base-200 p-1">
-                    {% for schema in available_entities %}
-                    <a
-                        href="?organization={{ selected_organization }}&entity={{ schema.entity_type }}"
-                        class="tab {% if schema.entity_type == entity_type %}tab-active{% endif %}"
-                    >
-                        {{ schema.label }}
-                    </a>
-                    {% endfor %}
+                <div class="overflow-x-auto">
+                    <div class="tabs tabs-boxed inline-flex bg-base-200 p-1">
+                        {% for schema in available_entities %}
+                        <a
+                            href="?organization={{ selected_organization }}&entity={{ schema.entity_type }}"
+                            class="tab whitespace-nowrap {% if schema.entity_type == entity_type %}tab-active{% endif %}"
+                        >
+                            {{ schema.label }}
+                        </a>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
 
             <div class="space-y-3">
                 <div class="text-xs font-semibold uppercase tracking-wide text-base-content/50">Sektionen</div>
-                <div class="tabs tabs-lifted tabs-sm md:tabs-md">
-                    {% for block in form_sections %}
-                    <a href="#section-{{ block.section.name }}" class="tab">
-                        {{ block.section.label }}
-                    </a>
-                    {% endfor %}
+                <div class="overflow-x-auto">
+                    <div class="join">
+                        {% for block in form_sections %}
+                        <a
+                            href="#section-{{ block.section.name }}"
+                            class="btn btn-sm join-item whitespace-nowrap {% if block.section.name == selected_section %}btn-neutral{% else %}btn-ghost{% endif %}"
+                        >
+                            {{ block.section.label }}
+                        </a>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <form method="post" class="space-y-6">
+    <form method="post" class="mx-auto max-w-5xl space-y-6">
         {% csrf_token %}
         <input type="hidden" name="organization" value="{{ selected_organization }}">
         <input type="hidden" name="entity" value="{{ entity_type }}">
-        {% for block in form_sections %}
-        <section id="section-{{ block.section.name }}" class="card border border-base-300 bg-base-100 shadow scroll-mt-28">
+        <input type="hidden" name="section" value="{{ selected_section }}">
+        <section class="card border border-base-300 bg-base-100 shadow-sm">
             <div class="card-body space-y-5">
-                <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                        <h2 class="card-title text-2xl">{{ block.section.label }}</h2>
-                        {% if block.section.description %}
-                        <p class="text-sm text-base-content/70">{{ block.section.description }}</p>
-                        {% endif %}
-                    </div>
-                    <div class="badge badge-outline">{{ block.fields|length }} Felder</div>
-                </div>
-
-                <div class="grid gap-4 lg:grid-cols-2">
-                    {% for item in block.fields %}
-                    <div class="rounded-box border border-base-300 bg-base-50 p-4">
-                        <label class="label" for="id_{{ item.field.name }}">
-                            <span class="label-text font-semibold">{{ item.field.label }}</span>
-                            {% if item.field.required %}
-                            <span class="badge badge-error badge-sm">Pflicht</span>
+                {% for block in form_sections %}
+                <div id="section-{{ block.section.name }}" class="scroll-mt-28 space-y-4">
+                    <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <h2 class="text-lg font-semibold">{{ block.section.label }}</h2>
+                            {% if block.section.description %}
+                            <p class="text-sm text-base-content/70">{{ block.section.description }}</p>
                             {% endif %}
-                        </label>
-
-                        {% if item.field.widget == "select" %}
-                        <select id="id_{{ item.field.name }}" name="{{ item.field.name }}" class="select select-bordered w-full {% if item.error %}select-error{% endif %}">
-                            <option value="">Bitte wählen</option>
-                            {% for value, label in item.field.options %}
-                            <option value="{{ value }}" {% if item.value == value %}selected{% endif %}>{{ label }}</option>
-                            {% endfor %}
-                        </select>
-                        {% elif item.field.widget == "textarea" %}
-                        <textarea id="id_{{ item.field.name }}" name="{{ item.field.name }}" class="textarea textarea-bordered w-full {% if item.error %}textarea-error{% endif %}" rows="4" placeholder="{{ item.field.placeholder }}">{{ item.value }}</textarea>
-                        {% else %}
-                        <input id="id_{{ item.field.name }}" type="text" name="{{ item.field.name }}" value="{{ item.value }}" placeholder="{{ item.field.placeholder }}" class="input input-bordered w-full {% if item.error %}input-error{% endif %}">
-                        {% endif %}
-
-                        {% if item.field.help_text %}
-                        <p class="mt-2 text-sm text-base-content/70">{{ item.field.help_text }}</p>
-                        {% endif %}
-                        {% if item.error %}
-                        <p class="mt-2 text-sm text-error">{{ item.error }}</p>
-                        {% endif %}
+                        </div>
+                        <div class="badge badge-outline">{{ block.fields|length }} Felder</div>
                     </div>
-                    {% endfor %}
+
+                    <div class="grid auto-rows-fr gap-4 lg:grid-cols-2">
+                        {% for item in block.fields %}
+                        <fieldset class="fieldset h-full rounded-box border border-base-300 bg-base-50 p-4">
+                            <label class="label px-0" for="id_{{ item.field.name }}">
+                                <span class="label-text font-semibold">{{ item.field.label }}</span>
+                                {% if item.field.required %}
+                                <span class="badge badge-error badge-sm">Pflicht</span>
+                                {% endif %}
+                            </label>
+
+                            {% if item.field.widget == "select" %}
+                            <select id="id_{{ item.field.name }}" name="{{ item.field.name }}" class="select select-bordered w-full {% if item.error %}select-error{% endif %}">
+                                <option value="">Bitte wählen</option>
+                                {% for value, label in item.field.options %}
+                                <option value="{{ value }}" {% if item.value == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            {% elif item.field.widget == "textarea" %}
+                            <textarea id="id_{{ item.field.name }}" name="{{ item.field.name }}" class="textarea textarea-bordered w-full {% if item.error %}textarea-error{% endif %}" rows="4" placeholder="{{ item.field.placeholder }}">{{ item.value }}</textarea>
+                            {% else %}
+                            <input id="id_{{ item.field.name }}" type="text" name="{{ item.field.name }}" value="{{ item.value }}" placeholder="{{ item.field.placeholder }}" class="input input-bordered w-full {% if item.error %}input-error{% endif %}">
+                            {% endif %}
+
+                            {% if item.field.help_text %}
+                            <p class="mt-2 text-sm text-base-content/70">{{ item.field.help_text }}</p>
+                            {% endif %}
+                            {% if item.error %}
+                            <p class="mt-2 text-sm text-error">{{ item.error }}</p>
+                            {% endif %}
+                        </fieldset>
+                        {% endfor %}
+                    </div>
+
+                    {% if not forloop.last %}
+                    <div class="divider my-1"></div>
+                    {% endif %}
                 </div>
+                {% endfor %}
             </div>
         </section>
-        {% endfor %}
         <div class="flex justify-end">
             <button type="submit" class="btn btn-primary">Anlegen und weiter bearbeiten</button>
         </div>

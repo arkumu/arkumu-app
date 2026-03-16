@@ -263,6 +263,18 @@ class MaskPreviewMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappi
     def _resolve_phase(self, request: HttpRequest) -> str:
         return normalize_mask_phase(request.GET.get("phase"))
 
+    def _resolve_section_name(
+        self,
+        request: HttpRequest,
+        *,
+        section_blocks: List[Dict[str, object]],
+    ) -> str | None:
+        requested = (request.GET.get("section") or "").strip()
+        available = [str(block["section"].name) for block in section_blocks]
+        if requested in available:
+            return requested
+        return available[0] if available else None
+
     def _build_mask_context(self, request: HttpRequest) -> Dict[str, object]:
         organization_code = self._resolve_organization_code(request)
         entity_type = self._resolve_entity_type(request)
@@ -300,6 +312,11 @@ class MaskPreviewMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappi
             )
 
         section_blocks = [block for block in section_blocks if block["fields"]]
+        selected_section = self._resolve_section_name(request, section_blocks=section_blocks)
+        active_section = next(
+            (block for block in section_blocks if block["section"].name == selected_section),
+            None,
+        )
 
         return {
             "organizations": list(self._organizations()),
@@ -314,6 +331,8 @@ class MaskPreviewMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappi
             "available_entities": list_available_mask_schemas(),
             "mask_schema": schema,
             "mask_sections": section_blocks,
+            "selected_section": selected_section,
+            "active_section": active_section,
             "mapping_sources": mapping_sources,
             "mapping_count": len(mapping_sources),
             "navbar_metadata_entry_link": self.render_metadata_entry_nav_items(
@@ -355,6 +374,18 @@ class MaskCreateMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappin
             raise ValueError("Organization is required.")
         return MaskCreateService(organization_code, entity_type)
 
+    def _resolve_section_name(
+        self,
+        request: HttpRequest,
+        *,
+        section_blocks: List[Dict[str, object]],
+    ) -> str | None:
+        requested = (request.POST.get("section") or request.GET.get("section") or "").strip()
+        available = [str(block["section"].name) for block in section_blocks]
+        if requested in available:
+            return requested
+        return available[0] if available else None
+
     def _set_workspace_context(self, request: HttpRequest, organization: Organization) -> None:
         self.set_current_organization(request, organization.id)
         mapping = (
@@ -394,6 +425,11 @@ class MaskCreateMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappin
                     ],
                 }
             )
+        selected_section = self._resolve_section_name(request, section_blocks=section_blocks)
+        active_section = next(
+            (block for block in section_blocks if block["section"].name == selected_section),
+            None,
+        )
         return {
             "organizations": list(self._organizations()),
             "selected_organization": service.organization.code,
@@ -401,6 +437,8 @@ class MaskCreateMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappin
             "entity_type": service.entity_type,
             "form_manifest": manifest,
             "form_sections": section_blocks,
+            "selected_section": selected_section,
+            "active_section": active_section,
             "navbar_metadata_entry_link": self.render_metadata_entry_nav_items(
                 request,
                 active=True,
