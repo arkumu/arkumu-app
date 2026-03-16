@@ -199,6 +199,7 @@ class MaskBinding:
     mapping_id: Optional[str]
     dataset_name: str
     column_name: str
+    property_uri: Optional[str]
     canonical_property_uri: Optional[str]
     canonical_property_label: Optional[str]
     is_multi_value: bool
@@ -250,12 +251,44 @@ class MappingConfigBindingResolver:
                         mapping_id=source.mapping_id,
                         dataset_name=column.get("dataset") or column.get("source") or "",
                         column_name=column.get("name") or "",
+                        property_uri=self._resolve_property_uri(
+                            mapping_config=source.mapping_config,
+                            dataset_name=column.get("dataset") or column.get("source") or "",
+                            column_name=column.get("name") or "",
+                        ),
                         canonical_property_uri=canonical_mapping.get("canonical_property_uri"),
                         canonical_property_label=canonical_mapping.get("canonical_property_label"),
                         is_multi_value=bool(column.get("is_multi_value")),
                     )
                 )
         return matches
+
+    def _resolve_property_uri(
+        self,
+        *,
+        mapping_config: Dict[str, Any],
+        dataset_name: str,
+        column_name: str,
+    ) -> Optional[str]:
+        manifest = self._extract_manifest(mapping_config)
+        dataset_data = manifest.get(dataset_name) or {}
+        properties = dataset_data.get("properties") or {}
+        property_config = properties.get(column_name) or {}
+        property_uri = property_config.get("uri")
+        if isinstance(property_uri, str) and property_uri.strip():
+            return property_uri
+        return None
+
+    def _extract_manifest(self, mapping_config: Dict[str, Any]) -> Dict[str, Any]:
+        promoted = mapping_config.get("promoted_manifest") or {}
+        if isinstance(promoted, dict):
+            promoted_manifest = promoted.get("schema_manifest")
+            if isinstance(promoted_manifest, dict) and promoted_manifest:
+                return promoted_manifest
+        schema_manifest = mapping_config.get("schema_manifest")
+        if isinstance(schema_manifest, dict):
+            return schema_manifest
+        return {}
 
 
 def list_available_mask_schemas() -> List[MaskSchema]:

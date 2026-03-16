@@ -80,6 +80,25 @@ def _create_typed_option(*, organization, type_uri, resource_uri, label, label_p
     return resource
 
 
+def _attach_dataset(*, organization, entity, dataset_uri):
+    predicate, _ = Resource.objects.get_or_create(
+        uri="http://purl.org/dc/terms/isPartOf",
+        defaults={
+            "canonical_uri": "http://purl.org/dc/terms/isPartOf",
+            "resource_type": ResourceType.PROPERTY,
+        },
+    )
+    dataset, _ = Resource.objects.get_or_create(
+        uri=dataset_uri,
+        defaults={
+            "resource_type": ResourceType.IRI,
+            "organization": organization,
+            "name": dataset_uri.rsplit("/", 1)[-1],
+        },
+    )
+    Triple.objects.create(subject=entity, predicate=predicate, object=dataset, source=organization)
+
+
 @pytest.mark.django_db
 def test_dashboard_renders_sections(client_logged_in, organization):
     url = reverse("metadata:metadata_entry")
@@ -194,9 +213,11 @@ def test_mask_entry_dashboard_renders_mask_and_binding_inspector(client_logged_i
     assert "Pflichtbewertung aus" in body
     assert "Slotquelle" in body
     assert "Bindingquelle" in body
+    assert "Feldstatus" in body
     assert "Frontend Grails" in body
     assert "Backend Grails" in body
     assert "ja" in body
+    assert "Gemappt + canonical" in body
     assert "Folkwang Projekt Mapping" in body
     assert "00_Projekte" in body
     assert "Titel" in body
@@ -284,6 +305,7 @@ def test_mask_entry_dashboard_renders_event_mask_with_binding_inspector(client_l
     assert "Beginn" not in body
     assert "Digikunst-Notiz aus Grails-Analyse" in body
     assert "Arkumu Canonical Model" in body
+    assert "Gemappt + canonical" in body
     assert "Frontend Grails" in body
     assert "Backend Grails" in body
     assert "Folkwang Ereignis Mapping" in body
@@ -308,6 +330,175 @@ def test_mask_entry_dashboard_renders_enrichment_fields_for_event(client_logged_
     assert "Beginn" in body
     assert "Ende" in body
     assert "Ereignistyp" not in body
+
+
+@pytest.mark.django_db
+def test_unified_mask_workspace_lists_all_active_organizations(client_logged_in, organization):
+    Organization.objects.create(name="HMT", code="hmt")
+    Organization.objects.create(name="KHM", code="khm")
+
+    response = client_logged_in.get(reverse("metadata:unified_mask_workspace"))
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Unified Mask Workspace" in body
+    assert "Folkwang" in body
+    assert "HMT" in body
+    assert "KHM" in body
+
+
+@pytest.mark.django_db
+def test_unified_mask_workspace_shows_create_action_for_supported_entities(client_logged_in, organization):
+    response = client_logged_in.get(
+        reverse("metadata:unified_mask_workspace"),
+        {"organization": organization.code, "entity": "project", "phase": "create"},
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Objekt anlegen" in body
+    assert "Details ansehen" in body
+
+
+@pytest.mark.django_db
+def test_unified_mask_workspace_hides_create_action_for_preview_only_entities(client_logged_in, organization):
+    response = client_logged_in.get(
+        reverse("metadata:unified_mask_workspace"),
+        {"organization": organization.code, "entity": "collection", "phase": "create"},
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Objekt anlegen" not in body
+    assert "Details ansehen" in body
+
+
+@pytest.mark.django_db
+def test_unified_mask_workspace_lists_existing_entities(client_logged_in, organization):
+    Mapping.objects.create(
+        name="Folkwang Projects",
+        organization_id=organization.code,
+        mapping_config={
+            "schema_manifest": {
+                "00_Projekte": {
+                    "entity_type": {
+                        "canonical_uri": CardURIs.PROJECT_TYPE,
+                    },
+                    "properties": {
+                        "Titel": {
+                            "uri": CardURIs.TITLE,
+                        }
+                    },
+                }
+            }
+        },
+    )
+
+    project = _create_typed_option(
+        organization=organization,
+        type_uri="http://arkumu.org/data/types/projekt",
+        resource_uri="http://arkumu.org/data/fuk/projects/p-1",
+        label="Projekt Alpha",
+        label_predicate_uri="http://arkumu.org/data/properties/bevorzugter-titel",
+    )
+    _attach_dataset(
+        organization=organization,
+        entity=project,
+        dataset_uri="http://arkumu.nrw/data/fuk/datasets/00-projekte",
+    )
+
+    response = client_logged_in.get(
+        reverse("metadata:unified_mask_workspace"),
+        {"organization": organization.code, "entity": "project", "phase": "create"},
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Bestehende Eintraege" in body
+    assert "Projekt Alpha" in body
+    assert "00_Projekte" in body
+    assert "Ansehen" in body
+    assert 'id="unified-mask-view-modal"' not in body
+    assert "Aktueller Wert" not in body
+    assert "Bearbeiten" in body
+
+    response = client_logged_in.get(
+        reverse("metadata:unified_mask_workspace"),
+        {
+            "organization": organization.code,
+            "entity": "project",
+            "phase": "create",
+            "resource_uri": project.uri,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert 'id="unified-mask-view-modal"' in body
+    assert "modal modal-open" in body
+    assert "Aktueller Wert" in body
+
+
+@pytest.mark.django_db
+def test_unified_mask_workspace_renders_pagination_controls(client_logged_in, user):
+    organization = Organization.objects.create(name="KHM", code="khm")
+    user.organization = organization
+    user.save(update_fields=["organization"])
+    for index in range(30):
+        _create_typed_option(
+            organization=organization,
+            type_uri=CardURIs.ACTOR_TYPE,
+            resource_uri=f"http://arkumu.org/data/khm/actors/{index}",
+            label=f"Akteur {index}",
+            label_predicate_uri=CardURIs.ACTOR_GERMAN_NAME,
+        )
+
+    response = client_logged_in.get(
+        reverse("metadata:unified_mask_workspace"),
+        {"organization": organization.code, "entity": "actor", "phase": "create", "page": 2},
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "30 Eintraege" in body
+    assert "Seite 2 von 2" in body
+    assert "Zurueck" in body
+
+
+@pytest.mark.django_db
+def test_unified_mask_workspace_filters_existing_entities_and_shows_summary(client_logged_in, organization):
+    project = _create_typed_option(
+        organization=organization,
+        type_uri=CardURIs.PROJECT_TYPE,
+        resource_uri="http://arkumu.org/data/fuk/projects/p-1",
+        label="Projekt Alpha",
+        label_predicate_uri=CardURIs.TITLE,
+    )
+    institution_predicate, _ = Resource.objects.get_or_create(
+        uri=CardURIs.INSTITUTION,
+        defaults={
+            "canonical_uri": CardURIs.INSTITUTION,
+            "resource_type": ResourceType.PROPERTY,
+        },
+    )
+    institution = Resource.objects.create(
+        uri="http://arkumu.org/data/fuk/entities/institution/1",
+        resource_type=ResourceType.ENTITY,
+        organization=organization,
+        name="Folkwang",
+    )
+    Triple.objects.create(subject=project, predicate=institution_predicate, object=institution, source=organization)
+
+    response = client_logged_in.get(
+        reverse("metadata:unified_mask_workspace"),
+        {"organization": organization.code, "entity": "project", "phase": "create", "search": "Folkwang"},
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert 'name="search"' in body
+    assert "Projekt Alpha" in body
+    assert "Folkwang" in body
 
 
 @pytest.mark.django_db

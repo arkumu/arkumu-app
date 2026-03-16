@@ -183,6 +183,7 @@
                                 {% if item.field.required_rule.is_required %}
                                 <span class="badge badge-error badge-sm">Pflicht</span>
                                 {% endif %}
+                                <span class="badge badge-sm {{ item.state.badge_class }}">{{ item.state.label }}</span>
                                 {% if item.field.vocabulary %}
                                 <span class="badge badge-outline badge-sm">Vokabular</span>
                                 {% endif %}
@@ -222,8 +223,15 @@
                                     </dd>
                                 </div>
                                 <div class="flex items-start justify-between gap-3">
+                                    <dt class="text-base-content/60">Feldstatus</dt>
+                                    <dd class="text-right"><code>{{ item.state.label }}</code></dd>
+                                </div>
+                                <div class="flex items-start justify-between gap-3">
                                     <dt class="text-base-content/60">Widget</dt>
                                     <dd class="text-right"><code>{{ item.field.widget }}</code></dd>
+                                </div>
+                                <div class="pt-2 text-base-content/70">
+                                    {{ item.state.detail }}
                                 </div>
                                 {% if item.field.help_text %}
                                 <div class="pt-2 text-base-content/70">

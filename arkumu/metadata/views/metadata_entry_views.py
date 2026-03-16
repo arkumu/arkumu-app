@@ -18,6 +18,7 @@ from django.urls import reverse
 
 from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.services.mask_create_service import MaskCreateService
+from arkumu.metadata.services.unified_mask_workspace_service import UnifiedMaskWorkspaceService
 from arkumu.metadata.services.metadata_entry_service import (
     EntryResult,
     MetadataEntryService,
@@ -27,14 +28,11 @@ from arkumu.metadata.services.mask_schema import (
     MASK_PHASE_ALL,
     MASK_PHASE_CREATE,
     MASK_PHASE_ENRICHMENT,
-    MappingConfigBindingResolver,
-    field_is_visible_in_phase,
-    get_mask_schema,
     list_available_mask_schemas,
     list_creatable_mask_schemas,
-    load_mapping_sources_for_organization,
     normalize_mask_phase,
 )
+from arkumu.metadata.services.mask_runtime_service import MaskRuntimeService
 from arkumu.metadata.services.project_structure_service import ProjectStructureService
 from arkumu.metadata.services.recent_metadata_entry_service import (
     RecentMetadataEntryService,
@@ -239,6 +237,7 @@ class MaskPreviewMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappi
     """Helpers for the standalone mask preview page."""
 
     default_entity = "project"
+    runtime_service = MaskRuntimeService()
 
     def _organizations(self) -> Iterable[Organization]:
         return Organization.objects.filter(is_active=True).order_by("name")
@@ -279,39 +278,19 @@ class MaskPreviewMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappi
         organization_code = self._resolve_organization_code(request)
         entity_type = self._resolve_entity_type(request)
         phase = self._resolve_phase(request)
-        schema = get_mask_schema(entity_type)
-        mapping_sources = (
-            load_mapping_sources_for_organization(organization_code)
-            if organization_code
-            else []
+        runtime = self.runtime_service.resolve(
+            entity_type=entity_type,
+            organization_code=organization_code,
+            phase=phase,
         )
-        resolver = MappingConfigBindingResolver()
 
-        section_blocks: List[Dict[str, object]] = []
-        for section in schema.sections:
-            field_blocks: List[Dict[str, object]] = []
-            for field in section.fields:
-                if not field_is_visible_in_phase(field, phase):
-                    continue
-                bindings = resolver.resolve_field_bindings(
-                    field=field,
-                    organization_code=organization_code or "",
-                    mapping_sources=mapping_sources,
-                )
-                field_blocks.append(
-                    {
-                        "field": field,
-                        "bindings": bindings,
-                    }
-                )
-            section_blocks.append(
-                {
-                    "section": section,
-                    "fields": field_blocks,
-                }
-            )
-
-        section_blocks = [block for block in section_blocks if block["fields"]]
+        section_blocks = [
+            {
+                "section": section.section,
+                "fields": section.fields,
+            }
+            for section in runtime.sections
+        ]
         selected_section = self._resolve_section_name(request, section_blocks=section_blocks)
         active_section = next(
             (block for block in section_blocks if block["section"].name == selected_section),
@@ -329,12 +308,12 @@ class MaskPreviewMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappi
                 {"value": MASK_PHASE_ALL, "label": "Alle Felder"},
             ],
             "available_entities": list_available_mask_schemas(),
-            "mask_schema": schema,
+            "mask_schema": runtime.schema,
             "mask_sections": section_blocks,
             "selected_section": selected_section,
             "active_section": active_section,
-            "mapping_sources": mapping_sources,
-            "mapping_count": len(mapping_sources),
+            "mapping_sources": runtime.mapping_sources,
+            "mapping_count": runtime.mapping_count,
             "navbar_metadata_entry_link": self.render_metadata_entry_nav_items(
                 request,
                 active=True,
@@ -514,6 +493,60 @@ class MaskCreateView(MaskCreateMixin, TemplateView):
             errors=result.field_errors,
         )
         return render(request, self.template_name, context, status=400)
+
+
+class UnifiedMaskWorkspaceView(GeneralLoginRequiredMixin, CSVMappingTemplateHelperMixin, TemplateView):
+    """Unified cross-institution workspace for mask navigation and create entry."""
+
+    template_name = "metadata/unified_mask_workspace/dashboard.html"
+    workspace_service = UnifiedMaskWorkspaceService()
+
+    def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        payload = self.workspace_service.build_payload(
+            organization_code=request.GET.get("organization"),
+            entity_type=request.GET.get("entity"),
+            phase=request.GET.get("phase"),
+            section=request.GET.get("section"),
+            resource_uri=request.GET.get("resource_uri"),
+            page=request.GET.get("page"),
+            search_query=request.GET.get("search"),
+        )
+        active_section = next(
+            (
+                section
+                for section in payload.resolved_mask.sections
+                if section.section.name == payload.selected_section
+            ),
+            None,
+        )
+        context = {
+            "organizations": payload.organizations,
+            "selected_organization": payload.selected_organization,
+            "entity_options": payload.entity_options,
+            "selected_entity": payload.selected_entity,
+            "phase_options": payload.phase_options,
+            "selected_phase": payload.selected_phase,
+            "search_query": payload.search_query,
+            "resolved_mask": payload.resolved_mask,
+            "selected_section": payload.selected_section,
+            "active_section": active_section,
+            "existing_entities": payload.existing_entities,
+            "existing_entities_page": payload.existing_entities_page,
+            "selected_resource_uri": payload.selected_resource_uri,
+            "selected_resource_label": payload.selected_resource_label,
+            "selected_resource_values": payload.selected_resource_values,
+            "navbar_metadata_entry_link": self.render_metadata_entry_nav_items(
+                request,
+                active=True,
+            ),
+        }
+        if request.headers.get("HX-Request"):
+            return render(
+                request,
+                "metadata/unified_mask_workspace/partials/dashboard_inner.html",
+                context,
+            )
+        return render(request, self.template_name, context)
 
 
 class MetadataEntrySectionView(MetadataEntryMixin, View):

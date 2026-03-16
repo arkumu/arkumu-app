@@ -1,0 +1,405 @@
+{% load custom_filters %}
+<div class="mx-auto max-w-6xl space-y-6">
+    <div class="hero rounded-box border border-base-300 bg-gradient-to-br from-base-200 via-base-100 to-base-200 shadow-sm">
+        <div class="hero-content w-full flex-col items-stretch gap-4 p-6">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="badge badge-outline">Unified Mask Workspace</div>
+                        {% if selected_organization %}
+                        <div class="badge badge-primary">{{ selected_organization|upper }}</div>
+                        {% endif %}
+                    </div>
+                    <h1 class="mt-3 text-3xl font-bold tracking-tight">{{ resolved_mask.schema.label }}</h1>
+                    <p class="mt-2 max-w-3xl text-sm text-base-content/70">
+                        Einheitliche Maske fuer Navigation und Anlegen, institutionsuebergreifend. Die Felder bleiben gleich, nur Bindings und Feldstatus unterscheiden sich.
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    {% for option in entity_options %}
+                        {% if option.entity_type == selected_entity and option.create_url %}
+                        <a href="{{ option.create_url }}" class="btn btn-primary btn-sm">Objekt anlegen</a>
+                        {% endif %}
+                    {% endfor %}
+                    <a href="{% url 'metadata:mask_entry' %}?organization={{ selected_organization }}&entity={{ selected_entity }}&phase={{ selected_phase }}" class="btn btn-outline btn-sm">
+                        Details ansehen
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body">
+            <form method="get"
+                  action="{% url 'metadata:unified_mask_workspace' %}"
+                  hx-get="{% url 'metadata:unified_mask_workspace' %}"
+                  hx-target="#unified-mask-workspace-root"
+                  hx-swap="innerHTML"
+                  hx-push-url="true"
+                  class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(18rem,1.25fr)]">
+                <input type="hidden" name="section" value="{{ selected_section }}">
+                <input type="hidden" name="resource_uri" value="{{ selected_resource_uri }}">
+                <input type="hidden" name="page" value="{{ existing_entities_page.page }}">
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-semibold">Organisation</span>
+                    </label>
+                    <select name="organization"
+                            class="select select-bordered"
+                            hx-trigger="change"
+                            hx-get="{% url 'metadata:unified_mask_workspace' %}"
+                            hx-target="#unified-mask-workspace-root"
+                            hx-swap="innerHTML"
+                            hx-push-url="true"
+                            hx-include="[name='entity'],[name='phase'],[name='section'],[name='resource_uri'],[name='page'],[name='search']">
+                        {% for org in organizations %}
+                        <option value="{{ org.code }}" {% if org.code == selected_organization %}selected{% endif %}>
+                            {{ org.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-semibold">Entitaet</span>
+                    </label>
+                    <select name="entity"
+                            class="select select-bordered"
+                            hx-trigger="change"
+                            hx-get="{% url 'metadata:unified_mask_workspace' %}"
+                            hx-target="#unified-mask-workspace-root"
+                            hx-swap="innerHTML"
+                            hx-push-url="true"
+                            hx-include="[name='organization'],[name='phase'],[name='section'],[name='resource_uri'],[name='page'],[name='search']">
+                        {% for option in entity_options %}
+                        <option value="{{ option.entity_type }}" {% if option.entity_type == selected_entity %}selected{% endif %}>
+                            {{ option.label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-semibold">Phase</span>
+                    </label>
+                    <select name="phase"
+                            class="select select-bordered"
+                            hx-trigger="change"
+                            hx-get="{% url 'metadata:unified_mask_workspace' %}"
+                            hx-target="#unified-mask-workspace-root"
+                            hx-swap="innerHTML"
+                            hx-push-url="true"
+                            hx-include="[name='organization'],[name='entity'],[name='section'],[name='resource_uri'],[name='page'],[name='search']">
+                        {% for phase in phase_options %}
+                        <option value="{{ phase.value }}" {% if phase.value == selected_phase %}selected{% endif %}>
+                            {{ phase.label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-semibold">Suche</span>
+                    </label>
+                    <input type="search"
+                           name="search"
+                           value="{{ search_query }}"
+                           placeholder="Name, Titel, Institution, Typ ..."
+                           class="input input-bordered"
+                           hx-trigger="keyup changed delay:250ms, search"
+                           hx-get="{% url 'metadata:unified_mask_workspace' %}"
+                           hx-target="#unified-mask-workspace-root"
+                           hx-swap="innerHTML"
+                           hx-push-url="true"
+                           hx-include="[name='organization'],[name='entity'],[name='phase'],[name='section'],[name='resource_uri'],[name='page']">
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="tabs-boxed tabs flex-wrap gap-2 bg-base-200 p-2">
+        {% for option in entity_options %}
+        <a href="{{ option.preview_url }}"
+           class="tab {% if option.entity_type == selected_entity %}tab-active{% endif %}">
+            {{ option.label }}
+        </a>
+        {% endfor %}
+    </div>
+
+    <section class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body gap-4">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h2 class="card-title text-xl">Bestehende Eintraege</h2>
+                    <p class="text-sm text-base-content/70">
+                        Vorhandene Objekte fuer {{ selected_organization|upper }} und {{ resolved_mask.schema.label }}.
+                    </p>
+                </div>
+                <div class="badge badge-outline">{{ existing_entities_page.total_count }} Eintraege</div>
+            </div>
+            {% if existing_entities_page.total_pages > 1 %}
+            <div class="flex flex-wrap items-center justify-between gap-3 text-sm text-base-content/70">
+                <div>
+                    Seite {{ existing_entities_page.page }} von {{ existing_entities_page.total_pages }}
+                </div>
+                <div class="join">
+                    {% if existing_entities_page.has_previous %}
+                    <a href="?organization={{ selected_organization }}&entity={{ selected_entity }}&phase={{ selected_phase }}&section={{ selected_section|default:'' }}&resource_uri={{ selected_resource_uri|default:'' }}&page={{ existing_entities_page.previous_page }}&search={{ search_query }}"
+                       class="btn btn-sm join-item">
+                        Zurueck
+                    </a>
+                    {% else %}
+                    <button class="btn btn-sm join-item" disabled>Zurueck</button>
+                    {% endif %}
+                    <button class="btn btn-sm join-item" disabled>
+                        {{ existing_entities_page.page }}/{{ existing_entities_page.total_pages }}
+                    </button>
+                    {% if existing_entities_page.has_next %}
+                    <a href="?organization={{ selected_organization }}&entity={{ selected_entity }}&phase={{ selected_phase }}&section={{ selected_section|default:'' }}&resource_uri={{ selected_resource_uri|default:'' }}&page={{ existing_entities_page.next_page }}&search={{ search_query }}"
+                       class="btn btn-sm join-item">
+                        Weiter
+                    </a>
+                    {% else %}
+                    <button class="btn btn-sm join-item" disabled>Weiter</button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if existing_entities %}
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Objekt</th>
+                            <th>Kontext</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entity in existing_entities %}
+                        <tr class="{% if entity.uri == selected_resource_uri %}bg-primary/5{% endif %}">
+                            <td>
+                                <div class="font-medium">{{ entity.label }}</div>
+                                {% if entity.summary %}
+                                <div class="mt-1 flex flex-wrap gap-1">
+                                    {% for value in entity.summary %}
+                                    <span class="badge badge-ghost badge-sm">{{ value }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                                <div class="mt-2 text-xs text-base-content/50">{{ entity.uri }}</div>
+                            </td>
+                            <td class="align-top">
+                                <div class="flex flex-wrap gap-1">
+                                    {% if entity.source_dataset %}
+                                    <span class="badge badge-outline badge-sm">{{ entity.source_dataset }}</span>
+                                    {% else %}
+                                    <span class="badge badge-ghost badge-sm">Canonical</span>
+                                    {% endif %}
+                                    <span class="badge badge-ghost badge-sm">{{ entity.visibility }}</span>
+                                </div>
+                            </td>
+                            <td class="text-right align-top">
+                                {% if entity.workspace_url %}
+                                <a href="{{ entity.workspace_url }}" class="btn btn-xs {% if entity.uri == selected_resource_uri %}btn-primary{% else %}btn-ghost{% endif %}">Ansehen</a>
+                                {% endif %}
+                                {% if entity.edit_url %}
+                                <a href="{{ entity.edit_url }}" class="btn btn-xs btn-outline">Bearbeiten</a>
+                                {% else %}
+                                <span class="text-xs text-base-content/50">Kein Editor</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="rounded-box border border-dashed border-base-300 px-4 py-6 text-sm text-base-content/70">
+                Keine Eintraege fuer diese Auswahl gefunden.
+            </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body gap-4">
+            <div class="flex flex-wrap gap-2">
+                {% for section in resolved_mask.sections %}
+                <a href="?organization={{ selected_organization }}&entity={{ selected_entity }}&phase={{ selected_phase }}&section={{ section.section.name }}&resource_uri={{ selected_resource_uri|default:'' }}&page={{ existing_entities_page.page }}&search={{ search_query }}"
+                   class="btn btn-sm {% if section.section.name == selected_section %}btn-primary{% else %}btn-ghost text-primary hover:bg-primary/10{% endif %}">
+                    {{ section.section.label }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    {% if active_section and not selected_resource_uri %}
+    <section class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body space-y-5">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                    <h2 class="card-title text-2xl">{{ active_section.section.label }}</h2>
+                    {% if active_section.section.description %}
+                    <p class="mt-1 text-sm text-base-content/70">{{ active_section.section.description }}</p>
+                    {% endif %}
+                    {% if selected_resource_label %}
+                    <div class="mt-2 text-sm text-base-content/70">
+                        Aktuelles Objekt: <span class="font-medium text-base-content">{{ selected_resource_label }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="badge badge-outline">{{ active_section.fields|length }} Felder</div>
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-2">
+                {% for item in active_section.fields %}
+                <article class="card border border-base-300 bg-base-50 shadow-sm">
+                    <div class="card-body gap-3">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h3 class="font-semibold">{{ item.field.label }}</h3>
+                            <span class="badge badge-sm {{ item.state.badge_class }}">{{ item.state.label }}</span>
+                            {% if item.field.required_rule.is_required %}
+                            <span class="badge badge-error badge-sm">Pflicht</span>
+                            {% endif %}
+                            {% if item.field.vocabulary %}
+                            <span class="badge badge-outline badge-sm">Vokabular</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-sm text-base-content/70">
+                            Slot <code>{{ item.field.semantic_slot.slot_id }}</code>
+                        </div>
+                        <div class="text-sm text-base-content/70">
+                            {{ item.state.detail }}
+                        </div>
+                        {% with loaded=selected_resource_values|get_item:item.field.name %}
+                        {% if selected_resource_uri %}
+                        <div class="rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="font-medium">Aktueller Wert</span>
+                                <span class="badge badge-ghost badge-sm">{{ loaded.source_label|default:"Leer" }}</span>
+                            </div>
+                            {% if loaded and loaded.values %}
+                            <ul class="mt-2 space-y-1">
+                                {% for value in loaded.values %}
+                                <li>{{ value }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <div class="mt-2 text-base-content/50">Noch kein Wert.</div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        {% endwith %}
+                        {% if item.bindings %}
+                        <div class="rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                            <div class="font-medium">Bindings</div>
+                            <ul class="mt-2 space-y-1">
+                                {% for binding in item.bindings %}
+                                <li><code>{{ binding.dataset_name }}</code> / <code>{{ binding.column_name }}</code></li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if active_section and selected_resource_uri %}
+    <dialog id="unified-mask-view-modal" class="modal modal-open">
+        <div class="modal-box max-w-5xl space-y-5">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="text-2xl font-semibold">{{ selected_resource_label|default:"Objekt" }}</h2>
+                    <p class="mt-1 text-sm text-base-content/70">
+                        {{ active_section.section.label }}
+                    </p>
+                </div>
+                <a href="?organization={{ selected_organization }}&entity={{ selected_entity }}&phase={{ selected_phase }}&section={{ selected_section|default:'' }}&page={{ existing_entities_page.page }}&search={{ search_query }}"
+                   class="btn btn-sm btn-ghost">
+                    Schliessen
+                </a>
+            </div>
+
+            <div class="rounded-box border border-base-300 bg-base-200/60 px-4 py-3 text-sm text-base-content/70">
+                <div class="font-medium text-base-content">URI</div>
+                <div class="mt-1 break-all">{{ selected_resource_uri }}</div>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+                {% for section in resolved_mask.sections %}
+                <a href="?organization={{ selected_organization }}&entity={{ selected_entity }}&phase={{ selected_phase }}&section={{ section.section.name }}&resource_uri={{ selected_resource_uri|default:'' }}&page={{ existing_entities_page.page }}&search={{ search_query }}"
+                   class="btn btn-sm {% if section.section.name == selected_section %}btn-primary{% else %}btn-ghost text-primary hover:bg-primary/10{% endif %}">
+                    {{ section.section.label }}
+                </a>
+                {% endfor %}
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-2">
+                {% for item in active_section.fields %}
+                <article class="card border border-base-300 bg-base-50 shadow-sm">
+                    <div class="card-body gap-3">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h3 class="font-semibold">{{ item.field.label }}</h3>
+                            <span class="badge badge-sm {{ item.state.badge_class }}">{{ item.state.label }}</span>
+                            {% if item.field.required_rule.is_required %}
+                            <span class="badge badge-error badge-sm">Pflicht</span>
+                            {% endif %}
+                            {% if item.field.vocabulary %}
+                            <span class="badge badge-outline badge-sm">Vokabular</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-sm text-base-content/70">
+                            Slot <code>{{ item.field.semantic_slot.slot_id }}</code>
+                        </div>
+                        <div class="text-sm text-base-content/70">
+                            {{ item.state.detail }}
+                        </div>
+                        {% with loaded=selected_resource_values|get_item:item.field.name %}
+                        <div class="rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="font-medium">Aktueller Wert</span>
+                                <span class="badge badge-ghost badge-sm">{{ loaded.source_label|default:"Leer" }}</span>
+                            </div>
+                            {% if loaded and loaded.values %}
+                            <ul class="mt-2 space-y-1">
+                                {% for value in loaded.values %}
+                                <li>{{ value }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <div class="mt-2 text-base-content/50">Noch kein Wert.</div>
+                            {% endif %}
+                        </div>
+                        {% endwith %}
+                        {% if item.bindings %}
+                        <div class="rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                            <div class="font-medium">Bindings</div>
+                            <ul class="mt-2 space-y-1">
+                                {% for binding in item.bindings %}
+                                <li><code>{{ binding.dataset_name }}</code> / <code>{{ binding.column_name }}</code></li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+        <a href="?organization={{ selected_organization }}&entity={{ selected_entity }}&phase={{ selected_phase }}&section={{ selected_section|default:'' }}&page={{ existing_entities_page.page }}&search={{ search_query }}"
+           class="modal-backdrop">
+            Schliessen
+        </a>
+    </dialog>
+    {% endif %}
+</div>
+
+{{ navbar_metadata_entry_link|safe }}

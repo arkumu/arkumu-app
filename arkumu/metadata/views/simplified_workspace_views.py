@@ -542,7 +542,26 @@ PROJECT_DATASET_NAME = "Projekt"
 DIGITAL_OBJECT_DATASET_NAME = "Digitales_Objekt"
 
 
-METADATA_ENTRY_PATH = "/metadata/metadata-entry/"
+UNIFIED_MASK_WORKSPACE_PATH = "/metadata/unified-mask-workspace/"
+UNIFIED_MASK_ENTITY_MAP = {
+    "project": "project",
+    "projekt": "project",
+    "ereignis": "event",
+    "event": "event",
+    "akteur": "actor",
+    "actor": "actor",
+    "ort": "place",
+    "place": "place",
+    "sammlung": "collection",
+    "collection": "collection",
+    "informationstraeger": "information_carrier",
+    "informationstrager": "information_carrier",
+    "information_carrier": "information_carrier",
+    "schlagwort": "keyword",
+    "keyword": "keyword",
+    "digitales_objekt": "digital_object",
+    "digital_object": "digital_object",
+}
 
 PREVIEW_PICKER_FIELD_SLUGS_BY_DATASET: Dict[str, Set[str]] = {
     PROJECT_DATASET_NAME: {"vorschaubild", "vorschaubild_uri"},
@@ -558,10 +577,12 @@ def _build_metadata_entry_url(
     if organization_code:
         params["organization"] = organization_code
     if entity:
-        params["entity"] = entity
+        normalized_entity = UNIFIED_MASK_ENTITY_MAP.get(entity.lower(), entity.lower())
+        params["entity"] = normalized_entity
+    params.setdefault("phase", "create")
     if not params:
-        return METADATA_ENTRY_PATH
-    return f"{METADATA_ENTRY_PATH}?{urlencode(params)}"
+        return UNIFIED_MASK_WORKSPACE_PATH
+    return f"{UNIFIED_MASK_WORKSPACE_PATH}?{urlencode(params)}"
 
 
 def _redirect_to_metadata_entry(

@@ -398,6 +398,7 @@ def test_get_renders_hidden_multi_value_field(client, user, dummy_service):
     assert 'name="visibility"' in content
     assert f'value="{PublicAccessLevel.RESTRICTED.value}" selected' in content
     assert 'id="triple-component-projekt-hat-teil"' in content
+    assert '/metadata/unified-mask-workspace/?organization=test-org&amp;entity=project&amp;phase=create' in content
 
 
 @pytest.mark.django_db
@@ -549,6 +550,7 @@ def test_get_renders_hidden_multi_value_field_for_ereignis(client, user, dummy_e
     assert 'data-multi-value="true"' in content
     assert 'data-htmx-multi-select' not in content
     assert 'name="Ereignistyp[]"' in content
+    assert '/metadata/unified-mask-workspace/?organization=test-org&amp;entity=event&amp;phase=create' in content
 
 
 @pytest.mark.django_db
