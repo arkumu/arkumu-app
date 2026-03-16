@@ -187,6 +187,8 @@ urlpatterns = [
     path('metadata-entry/section/', metadata_entry_views.MetadataEntrySectionView.as_view(), name='metadata_entry_section'),
     path('metadata-entry/submit/', metadata_entry_views.MetadataEntrySubmitView.as_view(), name='metadata_entry_submit'),
     path('metadata-entry/latest/', metadata_entry_views.MetadataEntryLatestProjectsView.as_view(), name='metadata_entry_latest'),
+    path('mask-entry/', metadata_entry_views.MaskPreviewDashboardView.as_view(), name='mask_entry'),
+    path('mask-create/', metadata_entry_views.MaskCreateView.as_view(), name='mask_create'),
 
     # Workspace quick create (human fields, single page)
     path('workspace/quick-create/<str:entity>/', workspace_quick_create_views.quick_create_entity, name='workspace_quick_create'),

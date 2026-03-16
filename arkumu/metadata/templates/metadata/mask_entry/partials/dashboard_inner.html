@@ -1,0 +1,316 @@
+<div class="space-y-8">
+    <div class="rounded-box border border-base-300 bg-gradient-to-br from-base-200 via-base-100 to-base-200 p-6 shadow-sm">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="badge badge-outline">{{ mask_schema.label }}</div>
+                    <div class="badge badge-neutral">{{ selected_organization|upper }}</div>
+                </div>
+                <h1 class="mt-3 text-3xl font-bold tracking-tight">Mask Schema Preview</h1>
+                <p class="mt-2 max-w-3xl text-sm text-base-content/70">
+                    Diese Seite trennt Maskenlogik, Digikunst-Evidenz, Arkumu-Semantik und Mappingstatus. Die Phase steuert, ob nur die Felder zum Anlegen oder die späteren Erweiterungsfelder gezeigt werden.
+                </p>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-sm">
+                <div class="rounded-box border border-base-300 bg-base-100 px-4 py-3">
+                    <div class="text-xs uppercase tracking-wide text-base-content/50">Maske</div>
+                    <div class="mt-1 font-semibold">{{ mask_schema.label }}</div>
+                </div>
+                <div class="rounded-box border border-base-300 bg-base-100 px-4 py-3">
+                    <div class="text-xs uppercase tracking-wide text-base-content/50">Quelle</div>
+                    <div class="mt-1 font-semibold">{{ mask_schema.source }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-300 shadow">
+        <div class="card-body">
+            <form method="get"
+                  action="{% url 'metadata:mask_entry' %}"
+                  hx-get="{% url 'metadata:mask_entry' %}"
+                  hx-target="#mask-entry-root"
+                  hx-swap="outerHTML"
+                  hx-push-url="true"
+                  hx-indicator="#mask-entry-loading"
+                  class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-semibold">Organisation</span>
+                    </label>
+                    <select name="organization"
+                            class="select select-bordered"
+                            hx-trigger="change"
+                            hx-get="{% url 'metadata:mask_entry' %}"
+                            hx-target="#mask-entry-root"
+                            hx-swap="outerHTML"
+                            hx-push-url="true"
+                            hx-include="[name='entity'],[name='phase']"
+                            hx-indicator="#mask-entry-loading">
+                        {% for org in organizations %}
+                        <option value="{{ org.code }}" {% if org.code == selected_organization %}selected{% endif %}>
+                            {{ org.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-semibold">Entität</span>
+                    </label>
+                    <select name="entity"
+                            class="select select-bordered"
+                            hx-trigger="change"
+                            hx-get="{% url 'metadata:mask_entry' %}"
+                            hx-target="#mask-entry-root"
+                            hx-swap="outerHTML"
+                            hx-push-url="true"
+                            hx-include="[name='organization'],[name='phase']"
+                            hx-indicator="#mask-entry-loading">
+                        {% for schema in available_entities %}
+                        <option value="{{ schema.entity_type }}" {% if schema.entity_type == entity_type %}selected{% endif %}>
+                            {{ schema.label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-semibold">Phase</span>
+                    </label>
+                    <select name="phase"
+                            class="select select-bordered"
+                            hx-trigger="change"
+                            hx-get="{% url 'metadata:mask_entry' %}"
+                            hx-target="#mask-entry-root"
+                            hx-swap="outerHTML"
+                            hx-push-url="true"
+                            hx-include="[name='organization'],[name='entity']"
+                            hx-indicator="#mask-entry-loading">
+                        {% for phase in phase_options %}
+                        <option value="{{ phase.value }}" {% if phase.value == selected_phase %}selected{% endif %}>
+                            {{ phase.label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-control">
+                    <button type="submit" class="btn btn-primary">
+                        Maske laden
+                        <span id="mask-entry-loading" class="loading loading-spinner loading-sm htmx-indicator ml-2"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="stats stats-vertical lg:stats-horizontal shadow bg-base-100 border border-base-300 w-full">
+        <div class="stat">
+            <div class="stat-title">Maske</div>
+            <div class="stat-value text-2xl">{{ mask_schema.label }}</div>
+            <div class="stat-desc">{{ mask_schema.source }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Phase</div>
+            <div class="stat-value text-2xl">
+                {% for phase in phase_options %}{% if phase.value == selected_phase %}{{ phase.label }}{% endif %}{% endfor %}
+            </div>
+            <div class="stat-desc">Produktionsfluss der Maske</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Sektionen</div>
+            <div class="stat-value text-2xl">{{ mask_sections|length }}</div>
+            <div class="stat-desc">editoriale Gruppen</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Mappings</div>
+            <div class="stat-value text-2xl">{{ mapping_count }}</div>
+            <div class="stat-desc">für {{ selected_organization|default:"keine Organisation" }}</div>
+        </div>
+    </div>
+
+    {% for block in mask_sections %}
+    <section class="card border border-base-300 bg-base-100 shadow">
+        <div class="card-body space-y-6">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                    <h2 class="card-title text-2xl">{{ block.section.label }}</h2>
+                    {% if block.section.description %}
+                    <p class="mt-1 text-sm text-base-content/70">{{ block.section.description }}</p>
+                    {% endif %}
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <div class="badge badge-outline">{{ block.fields|length }} Felder</div>
+                    <div class="badge badge-ghost">Maskentextquelle <code>{{ block.section.presentation_source }}</code></div>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                {% for item in block.fields %}
+                <div class="rounded-box border border-base-300 bg-base-100 p-5 shadow-sm">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h3 class="text-lg font-semibold">{{ item.field.label }}</h3>
+                                {% if item.field.required_rule.is_required %}
+                                <span class="badge badge-error badge-sm">Pflicht</span>
+                                {% endif %}
+                                {% if item.field.vocabulary %}
+                                <span class="badge badge-outline badge-sm">Vokabular</span>
+                                {% endif %}
+                                {% if item.field.multi %}
+                                <span class="badge badge-outline badge-sm">Mehrfachwert</span>
+                                {% endif %}
+                                {% if item.field.visibility == 'create' %}
+                                <span class="badge badge-primary badge-sm">Anlegen</span>
+                                {% elif item.field.visibility == 'enrichment' %}
+                                <span class="badge badge-secondary badge-sm">Erweitern</span>
+                                {% endif %}
+                            </div>
+                            <div class="mt-2 text-sm text-base-content/70">
+                                <span class="mr-3">Feldname <code>{{ item.field.name }}</code></span>
+                                <span class="mr-3">Widget <code>{{ item.field.widget }}</code></span>
+                                <span>Slot <code>{{ item.field.semantic_slot.slot_id }}</code></span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 text-sm">
+                            <div class="badge badge-neutral">{{ item.bindings|length }} Bindings</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 grid gap-4 xl:grid-cols-3">
+                        <div class="rounded-box border border-base-300 bg-base-50 p-4">
+                            <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-base-content/50">Maske</div>
+                            <dl class="space-y-2 text-sm">
+                                <div class="flex items-start justify-between gap-3">
+                                    <dt class="text-base-content/60">Feldlabelquelle</dt>
+                                    <dd class="text-right"><code>{{ item.field.presentation_source }}</code></dd>
+                                </div>
+                                <div class="flex items-start justify-between gap-3">
+                                    <dt class="text-base-content/60">Phase</dt>
+                                    <dd class="text-right">
+                                        {% if item.field.visibility == 'create' %}Anlegen{% elif item.field.visibility == 'enrichment' %}Erweitern{% else %}Immer{% endif %}
+                                    </dd>
+                                </div>
+                                <div class="flex items-start justify-between gap-3">
+                                    <dt class="text-base-content/60">Widget</dt>
+                                    <dd class="text-right"><code>{{ item.field.widget }}</code></dd>
+                                </div>
+                                {% if item.field.help_text %}
+                                <div class="pt-2 text-base-content/70">
+                                    {{ item.field.help_text }}
+                                </div>
+                                {% endif %}
+                            </dl>
+                        </div>
+
+                        <div class="rounded-box border border-base-300 bg-base-50 p-4">
+                            <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-base-content/50">Digikunst Evidenz</div>
+                            <dl class="space-y-2 text-sm">
+                                <div class="flex items-start justify-between gap-3">
+                                    <dt class="text-base-content/60">Pflichtbewertung aus</dt>
+                                    <dd class="text-right"><code>{{ item.field.required_rule.evidence_source }}</code></dd>
+                                </div>
+                                <div class="flex items-start justify-between gap-3">
+                                    <dt class="text-base-content/60">Frontend Grails</dt>
+                                    <dd class="text-right"><code>{{ item.field.required_rule.frontend_grails_label }}</code></dd>
+                                </div>
+                                <div class="flex items-start justify-between gap-3">
+                                    <dt class="text-base-content/60">Backend Grails</dt>
+                                    <dd class="text-right"><code>{{ item.field.required_rule.backend_grails_label }}</code></dd>
+                                </div>
+                            </dl>
+                            {% if item.field.required_rule.source_detail %}
+                            <div class="mt-3 rounded-box bg-base-100 px-3 py-2 text-sm text-base-content/70">
+                                {{ item.field.required_rule.source_detail }}
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="rounded-box border border-base-300 bg-base-50 p-4">
+                            <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-base-content/50">Arkumu Semantik</div>
+                            <dl class="space-y-2 text-sm">
+                                <div class="flex items-start justify-between gap-3">
+                                    <dt class="text-base-content/60">Slotquelle</dt>
+                                    <dd class="text-right"><code>{{ item.field.semantic_slot.source_label }}</code></dd>
+                                </div>
+                                {% if item.field.semantic_slot.canonical_property_uri %}
+                                <div class="space-y-1">
+                                    <dt class="text-base-content/60">Canonical URI</dt>
+                                    <dd class="break-all text-xs"><code>{{ item.field.semantic_slot.canonical_property_uri }}</code></dd>
+                                </div>
+                                {% endif %}
+                                {% if item.field.vocabulary %}
+                                <div class="space-y-1 pt-2">
+                                    <dt class="text-base-content/60">Vokabularquelle</dt>
+                                    <dd><code>{{ item.field.vocabulary.source_label }}</code></dd>
+                                    <dd class="text-xs text-base-content/70">
+                                        Typ <code>{{ item.field.vocabulary.source_type }}</code>,
+                                        Schlüssel <code>{{ item.field.vocabulary.key }}</code>
+                                    </dd>
+                                </div>
+                                {% endif %}
+                            </dl>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 rounded-box border border-base-300 bg-base-50">
+                        <details class="group" {% if item.bindings %}open{% endif %}>
+                            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                                <div>
+                                    <div class="font-medium">Binding Inspector</div>
+                                    <div class="text-xs text-base-content/60">Bindingquelle <code>Arkumu Mappings</code></div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    {% if item.bindings %}
+                                    <span class="badge badge-success badge-sm">{{ item.bindings|length }} Treffer</span>
+                                    {% else %}
+                                    <span class="badge badge-ghost badge-sm">0 Treffer</span>
+                                    {% endif %}
+                                </div>
+                            </summary>
+                            <div class="border-t border-base-300 px-4 py-3">
+                                {% if item.bindings %}
+                                <div class="overflow-x-auto">
+                                    <table class="table table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Mapping</th>
+                                                <th>Dataset</th>
+                                                <th>Spalte</th>
+                                                <th>Canonical Label</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for binding in item.bindings %}
+                                            <tr>
+                                                <td>{{ binding.mapping_name }}</td>
+                                                <td><code>{{ binding.dataset_name }}</code></td>
+                                                <td><code>{{ binding.column_name }}</code></td>
+                                                <td>{{ binding.canonical_property_label|default:"" }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {% else %}
+                                <div class="text-sm text-base-content/70">
+                                    Keine Bindings für dieses Feld in den verfügbaren Mappings der Organisation gefunden.
+                                </div>
+                                {% endif %}
+                            </div>
+                        </details>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endfor %}
+</div>
+
+{{ navbar_metadata_entry_link|safe }}

@@ -14,6 +14,7 @@ from arkumu.common.uri_utils import DEFAULT_INSTITUTION_BASE_URI, mint_uri, slug
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.canonical_graph_service import RDF_TYPE_URI
+from arkumu.metadata.services.mask_schema import MaskSchema, build_project_mask_schema
 from arkumu.projects import (
     ProjectCatchphrase,
     ProjectCategory,
@@ -81,96 +82,53 @@ class EntryResult:
 class DataclassFormService:
     """Constructs form sections based on project dataclasses."""
 
-    FORM_SECTIONS: List[FormSection] = [
-        FormSection(
-            name="overview",
-            label="Projektübersicht",
-            description="Grundlegende Angaben zum Projekt.",
-            fields=[
-                FormField(
-                    name="title",
-                    path="title",
-                    label="Titel",
-                    widget="text",
-                    placeholder="Bevorzugter Titel",
-                    required=True,
-                ),
-                FormField(
-                    name="subtitle",
-                    path="subtitle",
-                    label="Untertitel",
-                    widget="text",
-                    placeholder="Verwendung nur wenn nötig",
-                ),
-                FormField(
-                    name="description",
-                    path="description",
-                    label="Beschreibung",
-                    widget="textarea",
-                    placeholder="Kurzbeschreibung des Projekts",
-                ),
-                FormField(
-                    name="year_range",
-                    path="year_range",
-                    label="Zeitraum",
-                    widget="text",
-                    placeholder="z. B. 1984–1986",
-                ),
-            ],
-        ),
-        FormSection(
-            name="institution",
-            label="Institution",
-            description="Verortung des Projekts.",
-            fields=[
-                FormField(
-                    name="institution__label",
-                    path="institution.label",
-                    label="Institution",
-                    widget="text",
-                    placeholder="Name der Einliefernden Hochschule",
-                    required=True,
-                ),
-                FormField(
-                    name="institution__code",
-                    path="institution.code",
-                    label="Institutions-Code",
-                    widget="text",
-                    placeholder="Optionaler interner Code",
-                ),
-                FormField(
-                    name="project_type",
-                    path="project_type.label",
-                    label="Projektart",
-                    widget="text",
-                    placeholder="z. B. Konzert, Ausstellung",
-                ),
-            ],
-        ),
-        FormSection(
-            name="classification",
-            label="Klassifizierung",
-            description="Schlagworte und Kategorien für die spätere Suche.",
-            fields=[
-                FormField(
-                    name="categories",
-                    path="categories",
-                    label="Kategorien",
-                    widget="tags",
-                    placeholder="Mehrere Werte mit Enter bestätigen",
-                    multi=True,
-                ),
-                FormField(
-                    name="catchphrases",
-                    path="catchphrases",
-                    label="Schlagworte",
-                    widget="tags",
-                    placeholder="Mehrere Werte mit Enter bestätigen",
-                    multi=True,
-                ),
-            ],
-        ),
-    ]
+    MASK_SCHEMA: MaskSchema = build_project_mask_schema()
+    FIELD_PATHS: Dict[str, str] = {
+        "title": "title",
+        "subtitle": "subtitle",
+        "description": "description",
+        "year_range": "year_range",
+        "institution__label": "institution.label",
+        "institution__code": "institution.code",
+        "project_type": "project_type.label",
+        "categories": "categories",
+        "catchphrases": "catchphrases",
+    }
+
+    @classmethod
+    def _build_form_sections(cls) -> List[FormSection]:
+        sections: List[FormSection] = []
+        for mask_section in cls.MASK_SCHEMA.sections:
+            fields: List[FormField] = []
+            for mask_field in mask_section.fields:
+                path = cls.FIELD_PATHS.get(mask_field.name, mask_field.name)
+                fields.append(
+                    FormField(
+                        name=mask_field.name,
+                        path=path,
+                        label=mask_field.label,
+                        widget=mask_field.widget,
+                        placeholder=mask_field.placeholder,
+                        help_text=mask_field.help_text,
+                        required=mask_field.required_rule.is_required,
+                        multi=mask_field.multi,
+                    )
+                )
+            sections.append(
+                FormSection(
+                    name=mask_section.name,
+                    label=mask_section.label,
+                    description=mask_section.description,
+                    fields=fields,
+                )
+            )
+        return sections
+
+    def get_mask_schema(self) -> MaskSchema:
+        return self.MASK_SCHEMA
+
+    def get_form_sections(self) -> List[FormSection]:
+        return self._build_form_sections()
 
     def list_sections(self) -> List[Dict[str, str]]:
         return [
@@ -180,11 +138,11 @@ class DataclassFormService:
                 "description": section.description,
                 "property_count": len(section.fields),
             }
-            for section in self.FORM_SECTIONS
+            for section in self.get_form_sections()
         ]
 
     def get_section(self, section_name: str) -> SectionManifest:
-        section = next((s for s in self.FORM_SECTIONS if s.name == section_name), None)
+        section = next((s for s in self.get_form_sections() if s.name == section_name), None)
         if not section:
             raise ValueError(f"Unknown section '{section_name}'")
         return SectionManifest(
@@ -196,7 +154,7 @@ class DataclassFormService:
 
     def to_initial_data(self, record: ProjectRecord) -> Dict[str, str]:
         data: Dict[str, str] = {}
-        for section in self.FORM_SECTIONS:
+        for section in self.get_form_sections():
             for field in section.fields:
                 value = self._extract_path(record, field.path)
                 if not value:
@@ -406,15 +364,23 @@ class DataclassToTripleMapper:
     def _persist_institution(self, project: Resource, record: ProjectRecord, organization: Organization) -> None:
         if not record.institution or not record.institution.label:
             return
-        inst_slug = slugify_uri_part(record.institution.label)
-        inst_uri = mint_uri(self.base_uri, organization.code, "institutions", inst_slug)
-        institution_resource = self._ensure_resource(
-            uri=inst_uri,
-            resource_type=ResourceType.ENTITY,
-            name=record.institution.label,
-            organization=organization,
-            canonical_uri=CardURIs.INSTITUTION_TYPE,
-        )
+        if record.institution.uri:
+            institution_resource = self._ensure_resource(
+                uri=record.institution.uri,
+                resource_type=ResourceType.ENTITY,
+                name=record.institution.label,
+                organization=organization,
+            )
+        else:
+            inst_slug = slugify_uri_part(record.institution.label)
+            inst_uri = mint_uri(self.base_uri, organization.code, "institutions", inst_slug)
+            institution_resource = self._ensure_resource(
+                uri=inst_uri,
+                resource_type=ResourceType.ENTITY,
+                name=record.institution.label,
+                organization=organization,
+                canonical_uri=CardURIs.INSTITUTION_TYPE,
+            )
         predicate = self._ensure_property(self.INSTITUTION_PREDICATE, organization)
         Triple.objects.get_or_create(
             subject=project,
@@ -469,15 +435,23 @@ class DataclassToTripleMapper:
         if not record.project_type or not record.project_type.label:
             return
         predicate = self._ensure_property(self.PROJECT_TYPE_PREDICATE, organization)
-        literal = Resource.objects.create(
-            resource_type=ResourceType.LITERAL,
-            value=record.project_type.label,
-            organization=organization,
-        )
+        if record.project_type.uri:
+            target = self._ensure_resource(
+                uri=record.project_type.uri,
+                resource_type=ResourceType.ENTITY,
+                name=record.project_type.label,
+                organization=organization,
+            )
+        else:
+            target = Resource.objects.create(
+                resource_type=ResourceType.LITERAL,
+                value=record.project_type.label,
+                organization=organization,
+            )
         Triple.objects.get_or_create(
             subject=project,
             predicate=predicate,
-            object=literal,
+            object=target,
             defaults={"source": organization, "is_derived": False},
         )
 
@@ -518,6 +492,9 @@ class MetadataEntryService:
         base_uri = getattr(settings, self.BASE_URI_SETTING, DEFAULT_INSTITUTION_BASE_URI)
         self.form_service = DataclassFormService()
         self.mapper = DataclassToTripleMapper(base_uri)
+
+    def get_mask_schema(self) -> MaskSchema:
+        return self.form_service.get_mask_schema()
 
     def list_sections(self) -> List[Dict[str, str]]:
         return self.form_service.list_sections()

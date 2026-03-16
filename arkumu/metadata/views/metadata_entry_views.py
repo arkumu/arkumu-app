@@ -10,16 +10,29 @@ from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
 
-from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
+from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
 from django.shortcuts import render
 from django.views import View
 from django.views.generic import TemplateView
 from django.urls import reverse
 
+from arkumu.metadata.models.mappings import Mapping
+from arkumu.metadata.services.mask_create_service import MaskCreateService
 from arkumu.metadata.services.metadata_entry_service import (
     EntryResult,
     MetadataEntryService,
     SectionManifest,
+)
+from arkumu.metadata.services.mask_schema import (
+    MASK_PHASE_ALL,
+    MASK_PHASE_CREATE,
+    MASK_PHASE_ENRICHMENT,
+    MappingConfigBindingResolver,
+    field_is_visible_in_phase,
+    get_mask_schema,
+    list_available_mask_schemas,
+    load_mapping_sources_for_organization,
+    normalize_mask_phase,
 )
 from arkumu.metadata.services.project_structure_service import ProjectStructureService
 from arkumu.metadata.services.recent_metadata_entry_service import (
@@ -210,6 +223,198 @@ class MetadataEntryMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMap
             )
         return field_blocks
 
+    def _build_payload(self, post_data, manifest: SectionManifest) -> Dict[str, object]:
+        payload: Dict[str, object] = {}
+        for field in manifest.fields:
+            values = post_data.getlist(field.name)
+            if not values:
+                payload[field.name] = ""
+            else:
+                payload[field.name] = values[-1]
+        return payload
+
+
+class MaskPreviewMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappingTemplateHelperMixin):
+    """Helpers for the standalone mask preview page."""
+
+    default_entity = "project"
+
+    def _organizations(self) -> Iterable[Organization]:
+        return Organization.objects.filter(is_active=True).order_by("name")
+
+    def _resolve_organization_code(self, request: HttpRequest) -> str | None:
+        raw_code = request.GET.get("organization")
+        if raw_code:
+            return raw_code.lower()
+        user_org = getattr(request.user, "organization", None)
+        if user_org and user_org.code:
+            return user_org.code.lower()
+        first_org = self._organizations().first()
+        return first_org.code.lower() if first_org else None
+
+    def _resolve_entity_type(self, request: HttpRequest) -> str:
+        requested = (request.GET.get("entity") or "").strip().lower()
+        available = {schema.entity_type for schema in list_available_mask_schemas()}
+        if requested in available:
+            return requested
+        return self.default_entity
+
+    def _resolve_phase(self, request: HttpRequest) -> str:
+        return normalize_mask_phase(request.GET.get("phase"))
+
+    def _build_mask_context(self, request: HttpRequest) -> Dict[str, object]:
+        organization_code = self._resolve_organization_code(request)
+        entity_type = self._resolve_entity_type(request)
+        phase = self._resolve_phase(request)
+        schema = get_mask_schema(entity_type)
+        mapping_sources = (
+            load_mapping_sources_for_organization(organization_code)
+            if organization_code
+            else []
+        )
+        resolver = MappingConfigBindingResolver()
+
+        section_blocks: List[Dict[str, object]] = []
+        for section in schema.sections:
+            field_blocks: List[Dict[str, object]] = []
+            for field in section.fields:
+                if not field_is_visible_in_phase(field, phase):
+                    continue
+                bindings = resolver.resolve_field_bindings(
+                    field=field,
+                    organization_code=organization_code or "",
+                    mapping_sources=mapping_sources,
+                )
+                field_blocks.append(
+                    {
+                        "field": field,
+                        "bindings": bindings,
+                    }
+                )
+            section_blocks.append(
+                {
+                    "section": section,
+                    "fields": field_blocks,
+                }
+            )
+
+        section_blocks = [block for block in section_blocks if block["fields"]]
+
+        return {
+            "organizations": list(self._organizations()),
+            "selected_organization": organization_code,
+            "entity_type": entity_type,
+            "selected_phase": phase,
+            "phase_options": [
+                {"value": MASK_PHASE_CREATE, "label": "Anlegen"},
+                {"value": MASK_PHASE_ENRICHMENT, "label": "Erweitern"},
+                {"value": MASK_PHASE_ALL, "label": "Alle Felder"},
+            ],
+            "available_entities": list_available_mask_schemas(),
+            "mask_schema": schema,
+            "mask_sections": section_blocks,
+            "mapping_sources": mapping_sources,
+            "mapping_count": len(mapping_sources),
+            "navbar_metadata_entry_link": self.render_metadata_entry_nav_items(
+                request,
+                active=True,
+            ),
+        }
+
+
+class MaskCreateMixin(BaseCoordinatorMixin, GeneralLoginRequiredMixin, CSVMappingTemplateHelperMixin):
+    """Helpers for productive mask-driven create views."""
+
+    default_entity = "project"
+
+    def _organizations(self) -> Iterable[Organization]:
+        return Organization.objects.filter(is_active=True).order_by("name")
+
+    def _resolve_organization_code(self, request: HttpRequest) -> str | None:
+        raw_code = request.POST.get("organization") or request.GET.get("organization")
+        if raw_code:
+            return raw_code.lower()
+        user_org = getattr(request.user, "organization", None)
+        if user_org and user_org.code:
+            return user_org.code.lower()
+        first_org = self._organizations().first()
+        return first_org.code.lower() if first_org else None
+
+    def _resolve_entity_type(self, request: HttpRequest) -> str:
+        requested = (request.POST.get("entity") or request.GET.get("entity") or "").strip().lower()
+        available = {schema.entity_type for schema in list_available_mask_schemas()}
+        if requested in available:
+            return requested
+        return self.default_entity
+
+    def _get_form_service(self, request: HttpRequest) -> MaskCreateService:
+        organization_code = self._resolve_organization_code(request)
+        entity_type = self._resolve_entity_type(request)
+        if not organization_code:
+            raise ValueError("Organization is required.")
+        return MaskCreateService(organization_code, entity_type)
+
+    def _set_workspace_context(self, request: HttpRequest, organization: Organization) -> None:
+        self.set_current_organization(request, organization.id)
+        mapping = (
+            Mapping.objects.filter(organization_id=organization.code)
+            .order_by("-is_active", "-created_at")
+            .first()
+        )
+        if mapping:
+            self.set_current_mapping(
+                request,
+                str(mapping.id),
+                mapping_name=mapping.name,
+                organization_id=organization.id,
+            )
+
+    def _build_context(
+        self,
+        *,
+        request: HttpRequest,
+        service: MaskCreateService,
+        initial_data: Dict[str, str],
+        errors: Dict[str, str],
+    ) -> Dict[str, object]:
+        manifest = service.get_form_manifest()
+        section_blocks: List[Dict[str, object]] = []
+        for section in manifest.sections:
+            section_blocks.append(
+                {
+                    "section": section,
+                    "fields": [
+                        {
+                            "field": field,
+                            "value": initial_data.get(field.name, ""),
+                            "error": errors.get(field.name, ""),
+                        }
+                        for field in section.fields
+                    ],
+                }
+            )
+        return {
+            "organizations": list(self._organizations()),
+            "selected_organization": service.organization.code,
+            "available_entities": list_available_mask_schemas(),
+            "entity_type": service.entity_type,
+            "form_manifest": manifest,
+            "form_sections": section_blocks,
+            "navbar_metadata_entry_link": self.render_metadata_entry_nav_items(
+                request,
+                active=True,
+            ),
+        }
+
+    def _build_redirect_url(self, entity_type: str, resource_uri: str) -> str:
+        if entity_type == "project":
+            base_url = reverse("metadata:edit_project")
+        elif entity_type == "event":
+            base_url = reverse("metadata:edit_ereignis")
+        else:
+            raise ValueError(f"Unsupported entity type '{entity_type}'")
+        return f"{base_url}?{urlencode({'uri': resource_uri})}"
+
 
 class MetadataEntryDashboardView(MetadataEntryMixin, TemplateView):
     """Renders the base metadata entry workspace."""
@@ -221,6 +426,53 @@ class MetadataEntryDashboardView(MetadataEntryMixin, TemplateView):
         if request.headers.get("HX-Request"):
             return render(request, "metadata/entry/partials/dashboard_inner.html", context)
         return render(request, self.template_name, context)
+
+
+class MaskPreviewDashboardView(MaskPreviewMixin, TemplateView):
+    """Read only preview for schema driven masks and their mapping bindings."""
+
+    template_name = "metadata/mask_entry/dashboard.html"
+
+    def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        context = self._build_mask_context(request)
+        if request.headers.get("HX-Request"):
+            return render(request, "metadata/mask_entry/partials/dashboard_inner.html", context)
+        return render(request, self.template_name, context)
+
+
+class MaskCreateView(MaskCreateMixin, TemplateView):
+    """Productive create form driven by the mask create phase."""
+
+    template_name = "metadata/mask_create/dashboard.html"
+
+    def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        service = self._get_form_service(request)
+        context = self._build_context(
+            request=request,
+            service=service,
+            initial_data=service.build_initial_data(),
+            errors={},
+        )
+        return render(request, self.template_name, context)
+
+    def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        service = self._get_form_service(request)
+        payload = {
+            field.name: request.POST.get(field.name, "")
+            for field in service.get_form_manifest().fields
+        }
+        result = service.persist(payload)
+        if result.success and result.resource is not None:
+            self._set_workspace_context(request, service.organization)
+            return HttpResponseRedirect(self._build_redirect_url(service.entity_type, result.resource.uri))
+
+        context = self._build_context(
+            request=request,
+            service=service,
+            initial_data=payload,
+            errors=result.field_errors,
+        )
+        return render(request, self.template_name, context, status=400)
 
 
 class MetadataEntrySectionView(MetadataEntryMixin, View):
@@ -341,13 +593,3 @@ class MetadataEntryLatestProjectsView(MetadataEntryMixin, View):
             "selected_organization": org_code,
         }
         return render(request, self.template_name, context)
-
-    def _build_payload(self, post_data, manifest: SectionManifest) -> Dict[str, object]:
-        payload: Dict[str, object] = {}
-        for field in manifest.fields:
-            values = post_data.getlist(field.name)
-            if not values:
-                payload[field.name] = ""
-            else:
-                payload[field.name] = values[-1]
-        return payload

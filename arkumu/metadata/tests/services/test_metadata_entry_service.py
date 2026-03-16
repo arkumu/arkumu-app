@@ -36,6 +36,14 @@ def test_get_section_manifest(service):
 
 
 @pytest.mark.django_db
+def test_service_exposes_project_mask_schema(service):
+    schema = service.get_mask_schema()
+
+    assert schema.entity_type == "project"
+    assert schema.get_field("title").required_rule.is_required is True
+
+
+@pytest.mark.django_db
 def test_persist_entry_creates_project(service, organization):
     result = service.persist_entry(
         "overview",
