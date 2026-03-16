@@ -812,6 +812,35 @@ class ProjectIndexService:
         )
         return cards, total
 
+    def get_random_cards_sample(
+        self,
+        *,
+        limit: int,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Return a small random card sample and the total public card count."""
+        if self.backend != "db":
+            cards = self.get_cards()
+            total = len(cards)
+            if total <= limit:
+                return cards, total
+            return cards[:limit], total
+
+        base_qs = ProjectIndex.objects.filter(
+            public_access_level=PublicAccessLevel.PUBLIC,
+            is_public_approved=True,
+        ).exclude(title__isnull=True).exclude(title='')
+
+        total = base_qs.count()
+        sample_rows = list(base_qs.order_by("?")[:limit])
+        valid_paths = _get_valid_preview_paths()
+        cards = [entry.to_card_dict(valid_preview_paths=valid_paths) for entry in sample_rows]
+        logger.info(
+            "ProjectIndexService[db]: materialized %d random cards from %d total",
+            len(cards),
+            total,
+        )
+        return cards, total
+
     def get_card_by_uri(
         self,
         uri: str,

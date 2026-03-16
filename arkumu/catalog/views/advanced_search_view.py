@@ -1,6 +1,5 @@
 """Advanced search view using indexed ProjectIndex for fast queries."""
 
-import random
 import time
 
 from django.views.generic import View
@@ -57,9 +56,9 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
 
             if not has_filters:
                 # No filters: show random sample of projects
-                all_cards = index_service.get_cards()
-                total_results = len(all_cards)
-                filtered_cards = random.sample(all_cards, k=min(self.ITEMS_PER_PAGE, total_results))
+                filtered_cards, total_results = index_service.get_random_cards_sample(
+                    limit=self.ITEMS_PER_PAGE,
+                )
                 pagination_context = {
                     'current_page': 1,
                     'total_pages': 1,

@@ -80,3 +80,24 @@ def test_project_index_service_returns_empty_page_beyond_result_range():
 
     assert total == 5
     assert cards == []
+
+
+@pytest.mark.django_db
+def test_project_index_service_random_sample_materializes_only_requested_limit(monkeypatch):
+    org = OrganizationFactory(code="fuk")
+    entries = [_create_indexed_project(org, f"Alpha {i:02d}") for i in range(25)]
+
+    rendered_titles = []
+
+    def fake_to_card_dict(self, valid_preview_paths=None):
+        rendered_titles.append(self.title)
+        return {"uri": self.uri, "title": self.title}
+
+    monkeypatch.setattr(ProjectIndex, "to_card_dict", fake_to_card_dict)
+
+    service = ProjectIndexService(backend="db")
+    cards, total = service.get_random_cards_sample(limit=7)
+
+    assert total == 25
+    assert len(cards) == 7
+    assert len(rendered_titles) == 7
