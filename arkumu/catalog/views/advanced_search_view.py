@@ -39,6 +39,10 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
         jahr_bis = request.GET.get('jahr_bis', '').strip()
         year_from = int(jahr_von) if jahr_von.isdigit() else None
         year_to = int(jahr_bis) if jahr_bis.isdigit() else None
+        try:
+            page = max(int(request.GET.get('page', 1)), 1)
+        except ValueError:
+            page = 1
 
         logger.info(
             "ADVANCED_SEARCH: query=%s, institutions=%s, categories=%s, actors=%s, schlagworte=%s, year_from=%s, year_to=%s",
@@ -56,6 +60,15 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                 all_cards = index_service.get_cards()
                 total_results = len(all_cards)
                 filtered_cards = random.sample(all_cards, k=min(self.ITEMS_PER_PAGE, total_results))
+                pagination_context = {
+                    'current_page': 1,
+                    'total_pages': 1,
+                    'has_previous': False,
+                    'has_next': False,
+                    'previous_page': None,
+                    'next_page': None,
+                    'page_range': [],
+                }
             else:
                 # Apply filters via indexed query
                 # Map institution labels to org_codes for filtering
@@ -67,16 +80,27 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                         if ProjectIndex.label_to_org_code(label)
                     ]
 
-                filtered_cards = index_service.get_cards(
+                filtered_cards, total_results = index_service.get_cards_page(
                     query=query,
                     org_codes=org_codes if org_codes else None,
+                    page=page,
+                    page_size=self.ITEMS_PER_PAGE,
                     categories=categories if categories else None,
                     actors=actors if actors else None,
                     catchphrases=schlagworte if schlagworte else None,
                     year_from=year_from,
                     year_to=year_to,
                 )
-                total_results = len(filtered_cards)
+                total_pages = (total_results + self.ITEMS_PER_PAGE - 1) // self.ITEMS_PER_PAGE if total_results else 0
+                pagination_context = {
+                    'current_page': page,
+                    'total_pages': total_pages,
+                    'has_previous': page > 1,
+                    'has_next': total_pages > page,
+                    'previous_page': page - 1 if page > 1 else None,
+                    'next_page': page + 1 if total_pages > page else None,
+                    'page_range': self._get_page_range(page, total_pages) if total_pages else [],
+                }
 
             # Categories are already human-readable labels in ProjectIndex
             # Just copy category labels to category{N}_name for template
@@ -108,6 +132,13 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
                 'query': query or '',
                 'view': view,
                 'request_path': request_path,
+                'current_page': pagination_context['current_page'],
+                'total_pages': pagination_context['total_pages'],
+                'has_previous': pagination_context['has_previous'],
+                'has_next': pagination_context['has_next'],
+                'previous_page': pagination_context['previous_page'],
+                'next_page': pagination_context['next_page'],
+                'page_range': pagination_context['page_range'],
             }
 
             processing_time = time.time() - start_time
@@ -231,3 +262,14 @@ class AdvancedSearchView(GeneralLoginRequiredMixin, View, CatalogTemplateHelperM
             })
 
         return active_filters
+
+    def _get_page_range(self, current: int, total: int) -> List[int]:
+        """Get list of page numbers to display in pagination."""
+        if total <= 7:
+            return list(range(1, total + 1))
+
+        if current <= 3:
+            return list(range(1, min(6, total + 1))) + ([total] if total > 6 else [])
+        if current >= total - 2:
+            return [1] + list(range(max(total - 4, 2), total + 1))
+        return [1] + list(range(current - 1, min(current + 2, total + 1))) + ([total] if current + 2 < total else [])

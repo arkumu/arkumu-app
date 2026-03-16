@@ -42,8 +42,45 @@
           {% endif %}
         {% endwith %}
       {% endfor %}
-      {% if card %}
+      {% if view == 'card' %}
         </div>
+        </div>
+      {% endif %}
+
+      {% if total_pages > 1 %}
+        <div class="w-full flex items-center justify-center gap-2 py-8">
+          {% if has_previous %}
+            <a href="?{% if query %}query={{ query|urlencode }}&amp;{% endif %}{% for item in institution %}hochschule={{ item|urlencode }}&amp;{% endfor %}{% for item in actor %}akteur={{ item|urlencode }}&amp;{% endfor %}{% for item in category %}kategorie={{ item|urlencode }}&amp;{% endfor %}{% for item in active_filters %}{% if item.type == 'schlagwort' %}schlagwort={{ item.value|urlencode }}&amp;{% endif %}{% endfor %}{% if request.GET.jahr_von %}jahr_von={{ request.GET.jahr_von|urlencode }}&amp;{% endif %}{% if request.GET.jahr_bis %}jahr_bis={{ request.GET.jahr_bis|urlencode }}&amp;{% endif %}page={{ previous_page }}{% if view %}&amp;view={{ view|urlencode }}{% endif %}"
+               class="px-3 py-1 text-sm border border-arkumu-dark text-arkumu-dark theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
+              « Zurück
+            </a>
+          {% else %}
+            <span class="px-3 py-1 text-sm opacity-50 border border-gray-400 text-gray-400">« Zurück</span>
+          {% endif %}
+
+          <div class="flex items-center gap-1">
+            {% for page_num in page_range %}
+              {% if page_num == current_page %}
+                <span class="px-3 py-1 text-sm font-bold bg-arkumu-dark text-arkumu-light theme-dark:bg-arkumu-light theme-dark:text-arkumu-dark theme-blue:bg-arkumu-blue theme-blue:text-arkumu-light">
+                  {{ page_num }}
+                </span>
+              {% else %}
+                <a href="?{% if query %}query={{ query|urlencode }}&amp;{% endif %}{% for item in institution %}hochschule={{ item|urlencode }}&amp;{% endfor %}{% for item in actor %}akteur={{ item|urlencode }}&amp;{% endfor %}{% for item in category %}kategorie={{ item|urlencode }}&amp;{% endfor %}{% for item in active_filters %}{% if item.type == 'schlagwort' %}schlagwort={{ item.value|urlencode }}&amp;{% endif %}{% endfor %}{% if request.GET.jahr_von %}jahr_von={{ request.GET.jahr_von|urlencode }}&amp;{% endif %}{% if request.GET.jahr_bis %}jahr_bis={{ request.GET.jahr_bis|urlencode }}&amp;{% endif %}page={{ page_num }}{% if view %}&amp;view={{ view|urlencode }}{% endif %}"
+                   class="px-3 py-1 text-sm border border-arkumu-dark text-arkumu-dark theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
+                  {{ page_num }}
+                </a>
+              {% endif %}
+            {% endfor %}
+          </div>
+
+          {% if has_next %}
+            <a href="?{% if query %}query={{ query|urlencode }}&amp;{% endif %}{% for item in institution %}hochschule={{ item|urlencode }}&amp;{% endfor %}{% for item in actor %}akteur={{ item|urlencode }}&amp;{% endfor %}{% for item in category %}kategorie={{ item|urlencode }}&amp;{% endfor %}{% for item in active_filters %}{% if item.type == 'schlagwort' %}schlagwort={{ item.value|urlencode }}&amp;{% endif %}{% endfor %}{% if request.GET.jahr_von %}jahr_von={{ request.GET.jahr_von|urlencode }}&amp;{% endif %}{% if request.GET.jahr_bis %}jahr_bis={{ request.GET.jahr_bis|urlencode }}&amp;{% endif %}page={{ next_page }}{% if view %}&amp;view={{ view|urlencode }}{% endif %}"
+               class="px-3 py-1 text-sm border border-arkumu-dark text-arkumu-dark theme-dark:border-arkumu-light theme-dark:text-arkumu-light theme-blue:border-arkumu-blue theme-blue:text-arkumu-blue">
+              Weiter »
+            </a>
+          {% else %}
+            <span class="px-3 py-1 text-sm opacity-50 border border-gray-400 text-gray-400">Weiter »</span>
+          {% endif %}
         </div>
       {% endif %}
 
