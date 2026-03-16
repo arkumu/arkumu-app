@@ -22,7 +22,7 @@
             <button type="button"
                     id="{{ input_id }}"
                     role="tab"
-                    class="btn btn-sm flex-none font-semibold whitespace-nowrap px-4 sm:px-5 {% if forloop.first %}btn-neutral{% else %}btn-ghost{% endif %}"
+                    class="btn btn-sm flex-none font-semibold whitespace-nowrap px-4 sm:px-5 {% if forloop.first %}btn-primary{% else %}btn-ghost text-primary hover:bg-primary/10 hover:text-primary{% endif %}"
                     aria-controls="{{ panel_id }}"
                     aria-label="{{ section.title }}"
                     aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"

@@ -52,8 +52,11 @@
           triggers.forEach(function (trigger) {
             const isActive = trigger.getAttribute('data-tab-target') === targetId;
             trigger.setAttribute('aria-selected', isActive ? 'true' : 'false');
-            trigger.classList.toggle('btn-neutral', isActive);
+            trigger.classList.toggle('btn-primary', isActive);
             trigger.classList.toggle('btn-ghost', !isActive);
+            trigger.classList.toggle('text-primary', !isActive);
+            trigger.classList.toggle('hover:bg-primary/10', !isActive);
+            trigger.classList.toggle('hover:text-primary', !isActive);
           });
 
           panels.forEach(function (panel) {
