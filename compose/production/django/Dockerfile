@@ -76,6 +76,9 @@ RUN chmod +x /start
 # copy application code to WORKDIR
 COPY --chown=django:django . ${APP_HOME}
 
+# WORKDIR is created as root; give django ownership so it can create dirs at runtime
+RUN chown django:django ${APP_HOME}
+
 USER django
 
 RUN DATABASE_URL="" \
