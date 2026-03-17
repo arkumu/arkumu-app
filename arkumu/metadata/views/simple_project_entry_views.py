@@ -66,6 +66,7 @@ class SimpleProjectEntryView(LoginRequiredMixin, View):
         title = request.POST.get("titel", "").strip()
         alternativer_titel = request.POST.get("alternativer_titel", "").strip()
         projektart_uri = request.POST.get("projektart_uri", "").strip()
+        projektkategorie_uris = request.POST.getlist("projektkategorie_uris")
         ereignis_uris = request.POST.getlist("ereignis_uris")
         akteure_uris = request.POST.getlist("akteure_uris")
 
@@ -79,6 +80,7 @@ class SimpleProjectEntryView(LoginRequiredMixin, View):
                 title=title,
                 alternativer_titel=alternativer_titel or None,
                 projektart_uri=projektart_uri or None,
+                projektkategorie_uris=projektkategorie_uris or None,
                 ereignis_uris=ereignis_uris or None,
                 akteure_uris=akteure_uris or None,
             )
@@ -100,7 +102,7 @@ class SimpleProjectEntryView(LoginRequiredMixin, View):
                 )
 
             messages.success(request, f"Projekt '{title}' wurde erfolgreich erstellt.")
-            return redirect("metadata:entity_creation_workspace")
+            return redirect("metadata:resource_graph", resource_id=entity._resource.id)
         except Exception:
             logger.exception("Failed to create project")
             messages.error(request, "Fehler beim Erstellen des Projekts.")
@@ -114,6 +116,33 @@ class SimpleProjectEntryView(LoginRequiredMixin, View):
         except Exception:
             logger.exception("Failed to load Projektart choices")
             return []
+
+
+@general_login_required
+@require_GET
+def search_controlled_vocabulary(request: HttpRequest, vocab_key: str) -> HttpResponse:
+    """HTMX endpoint: search controlled vocabulary entries by label."""
+    query = request.GET.get("q", "").strip()
+    if not query or len(query) < 2:
+        return render(request, "metadata/simple_project_entry/partials/_search_results.html", {
+            "results": [],
+            "dataset_name": vocab_key,
+            "query": query,
+        })
+
+    try:
+        cv_service = ControlledVocabularyService(vocab_key)
+        entries = cv_service.list_entries(search=query)
+        results = [{"uri": e.resource.uri, "label": e.label} for e in entries[:20]]
+    except Exception:
+        logger.exception("Failed to search vocabulary %s", vocab_key)
+        results = []
+
+    return render(request, "metadata/simple_project_entry/partials/_search_results.html", {
+        "results": results,
+        "dataset_name": vocab_key,
+        "query": query,
+    })
 
 
 @general_login_required

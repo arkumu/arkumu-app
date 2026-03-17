@@ -33,7 +33,7 @@
                  placeholder="Alternativer Titel (optional)">
         </div>
 
-        <div class="form-control w-full">
+        <div class="form-control w-full mb-4">
           <label class="label" for="projektart_uri">
             <span class="label-text">Projektart</span>
           </label>
@@ -44,6 +44,26 @@
             <option value="{{ uri }}">{{ label }}</option>
             {% endfor %}
           </select>
+        </div>
+
+        <div class="form-control w-full">
+          <label class="label">
+            <span class="label-text">Projektkategorie</span>
+          </label>
+          <div class="relative">
+            <input type="search"
+                   id="kategorie-search-input"
+                   name="q"
+                   placeholder="Projektkategorie suchen..."
+                   class="input input-bordered w-full"
+                   hx-get="{% url 'metadata:simple_project_entry_search_cv' vocab_key='project_categories' %}"
+                   hx-trigger="input changed delay:250ms"
+                   hx-target="#kategorie-results"
+                   hx-swap="innerHTML"
+                   autocomplete="off">
+            <div id="kategorie-results" class="relative"></div>
+          </div>
+          <div id="kategorie-selected" class="flex flex-wrap gap-2 mt-2"></div>
         </div>
       </div>
     </div>
@@ -123,10 +143,16 @@
 </div>
 
 <script>
+const _fieldMap = {
+  'Ereignis': {field: 'ereignis_uris', container: 'ereignis-selected', input: 'ereignis-search-input', results: 'ereignis-results'},
+  'Akteurin': {field: 'akteure_uris', container: 'akteure-selected', input: 'akteure-search-input', results: 'akteure-results'},
+  'project_categories': {field: 'projektkategorie_uris', container: 'kategorie-selected', input: 'kategorie-search-input', results: 'kategorie-results'},
+};
+
 function addSelectedEntity(datasetName, uri, name) {
-  const fieldName = datasetName === 'Ereignis' ? 'ereignis_uris' : 'akteure_uris';
-  const containerId = datasetName === 'Ereignis' ? 'ereignis-selected' : 'akteure-selected';
-  const container = document.getElementById(containerId);
+  const config = _fieldMap[datasetName];
+  if (!config) return;
+  const container = document.getElementById(config.container);
 
   if (container.querySelector(`input[value="${uri}"]`)) return;
 
@@ -134,15 +160,13 @@ function addSelectedEntity(datasetName, uri, name) {
   tag.className = 'badge badge-lg gap-1 max-w-full';
   tag.innerHTML = `
     <span class="truncate" style="max-width:calc(100% - 2rem)" title="${name}">${name}</span>
-    <input type="hidden" name="${fieldName}" value="${uri}">
+    <input type="hidden" name="${config.field}" value="${uri}">
     <button type="button" class="btn btn-ghost btn-xs flex-shrink-0" onclick="this.parentElement.remove()">&times;</button>
   `;
   container.appendChild(tag);
 
-  const resultsId = datasetName === 'Ereignis' ? 'ereignis-results' : 'akteure-results';
-  const inputId = datasetName === 'Ereignis' ? 'ereignis-search-input' : 'akteure-search-input';
-  document.getElementById(resultsId).innerHTML = '';
-  document.getElementById(inputId).value = '';
+  document.getElementById(config.results).innerHTML = '';
+  document.getElementById(config.input).value = '';
 }
 
 document.addEventListener('DOMContentLoaded', function() {

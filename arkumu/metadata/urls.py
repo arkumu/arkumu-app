@@ -486,4 +486,6 @@ urlpatterns = [
     path('simple-project-entry/', simple_project_entry_views.SimpleProjectEntryView.as_view(), name='simple_project_entry'),
     path('simple-project-entry/search/<str:dataset_name>/',
          simple_project_entry_views.search_entities, name='simple_project_entry_search'),
+    path('simple-project-entry/search-cv/<str:vocab_key>/',
+         simple_project_entry_views.search_controlled_vocabulary, name='simple_project_entry_search_cv'),
     ]

@@ -105,6 +105,7 @@ class SimpleProjectEntryService:
         title: str,
         alternativer_titel: Optional[str] = None,
         projektart_uri: Optional[str] = None,
+        projektkategorie_uris: Optional[List[str]] = None,
         ereignis_uris: Optional[List[str]] = None,
         akteure_uris: Optional[List[str]] = None,
     ) -> EntityResource:
@@ -165,6 +166,26 @@ class SimpleProjectEntryService:
                         source=self.organization,
                         defaults={"is_derived": False},
                     )
+
+        # Projektkategorie(n)
+        if projektkategorie_uris:
+            kat_prop_uri = self.resolver.find_property_uri(
+                ds["config"], "http://arkumu.org/data/properties/projektkategorie"
+            )
+            if kat_prop_uri:
+                pred = _ensure_predicate(kat_prop_uri, "Projektkategorie")
+                for kat_uri in projektkategorie_uris:
+                    if not kat_uri:
+                        continue
+                    target = Resource.objects.filter(uri=kat_uri).first()
+                    if target:
+                        Triple.objects.get_or_create(
+                            subject=entity._resource,
+                            predicate=pred,
+                            object=target,
+                            source=self.organization,
+                            defaults={"is_derived": False},
+                        )
 
         # Alternativer Titel
         if alternativer_titel:
