@@ -217,12 +217,12 @@ document.addEventListener('DOMContentLoaded', function() {
       xhr.send(file);
     });
 
-    await fetch(`/storage/upload/mark-uploaded/${upload.file_id}/`, {
+    await fetch(`/storage/upload/mark-uploaded/${upload.upload_file_id}/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
     });
 
-    return { key: upload.key, file_id: upload.file_id, session_id: presignedData.session_id };
+    return { s3_key: upload.s3_key, file_id: upload.upload_file_id, session_id: presignedData.session_id };
   }
 
   // Intercept form submit: upload files first, then submit
@@ -254,7 +254,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Store upload metadata as hidden inputs
         for (const [name, value] of Object.entries({
-          'upload_s3_keys': result.key,
+          'upload_s3_keys': result.s3_key,
           'upload_file_names': files[i].name,
           'upload_content_types': files[i].type,
           'upload_file_sizes': files[i].size,
