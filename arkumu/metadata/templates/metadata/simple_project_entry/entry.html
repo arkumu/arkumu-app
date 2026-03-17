@@ -3,7 +3,8 @@
 
 {% block content %}
 <div class="max-w-3xl mx-auto py-8 px-4">
-  <h1 class="text-2xl font-bold mb-6">Neues Projekt erstellen</h1>
+  <h1 class="text-2xl font-bold mb-2">Neues Projekt erstellen</h1>
+  <p class="text-base-content/70 mb-6">Institution: <span class="font-semibold text-base-content">{{ organization.name }}</span></p>
 
   <form method="post" id="project-entry-form">
     {% csrf_token %}
@@ -85,28 +86,27 @@
       </div>
     </div>
 
-    {# Section 3: Digitales Objekt #}
+    {# Section 3: Digitale Objekte #}
     <div class="card bg-base-100 shadow mb-6">
       <div class="card-body">
-        <h2 class="card-title text-lg">Digitales Objekt</h2>
-        <div class="form-control w-full">
-          <label class="label">
-            <span class="label-text">Datei hochladen</span>
-          </label>
-          <input type="file" id="file-input"
-                 class="file-input file-input-bordered w-full">
-          <div id="upload-progress" class="mt-2 hidden">
-            <progress class="progress progress-primary w-full" value="0" max="100"></progress>
-            <span id="upload-status" class="text-sm"></span>
+        <h2 class="card-title text-lg">Digitale Objekte</h2>
+        <div id="file-slots">
+          <div class="form-control w-full mb-2">
+            <input type="file" class="file-input file-input-bordered w-full file-slot">
           </div>
-          <div id="upload-result" class="mt-2"></div>
         </div>
+        <button type="button" id="add-file-btn" class="btn btn-ghost btn-sm mt-1">+ Weitere Datei</button>
+        <div id="upload-progress" class="mt-2 hidden">
+          <progress class="progress progress-primary w-full" value="0" max="100"></progress>
+          <span id="upload-status" class="text-sm"></span>
+        </div>
+        <div id="upload-file-list" class="mt-2 flex flex-col gap-1"></div>
       </div>
     </div>
 
     {# Submit #}
     <div class="flex justify-end">
-      <button type="submit" class="btn btn-primary">Speichern</button>
+      <button type="submit" class="btn btn-primary" id="submit-btn">Speichern</button>
     </div>
   </form>
 </div>
@@ -117,7 +117,6 @@ function addSelectedEntity(datasetName, uri, name) {
   const containerId = datasetName === 'Ereignis' ? 'ereignis-selected' : 'akteure-selected';
   const container = document.getElementById(containerId);
 
-  // Prevent duplicates
   if (container.querySelector(`input[value="${uri}"]`)) return;
 
   const tag = document.createElement('span');
@@ -129,116 +128,168 @@ function addSelectedEntity(datasetName, uri, name) {
   `;
   container.appendChild(tag);
 
-  // Clear search results
   const resultsId = datasetName === 'Ereignis' ? 'ereignis-results' : 'akteure-results';
   document.getElementById(resultsId).innerHTML = '';
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  const fileInput = document.getElementById('file-input');
+  const fileSlotsContainer = document.getElementById('file-slots');
+  const addFileBtn = document.getElementById('add-file-btn');
   const progressContainer = document.getElementById('upload-progress');
   const progressBar = progressContainer.querySelector('progress');
   const statusText = document.getElementById('upload-status');
-  const uploadResult = document.getElementById('upload-result');
+  const fileListContainer = document.getElementById('upload-file-list');
   const form = document.getElementById('project-entry-form');
+  const submitBtn = document.getElementById('submit-btn');
   const csrfToken = form.querySelector('[name=csrfmiddlewaretoken]').value;
 
-  fileInput.addEventListener('change', async function() {
-    const file = this.files[0];
-    if (!file) return;
+  // Add more file slots
+  addFileBtn.addEventListener('click', function() {
+    const slot = document.createElement('div');
+    slot.className = 'form-control w-full mb-2';
+    slot.innerHTML = `
+      <div class="flex gap-2">
+        <input type="file" class="file-input file-input-bordered w-full file-slot">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="this.parentElement.parentElement.remove()">&#x2715;</button>
+      </div>`;
+    fileSlotsContainer.appendChild(slot);
+  });
 
+  // Collect all files from all slots
+  function getAllFiles() {
+    const files = [];
+    fileSlotsContainer.querySelectorAll('.file-slot').forEach(input => {
+      if (input.files && input.files[0]) {
+        files.push(input.files[0]);
+      }
+    });
+    return files;
+  }
+
+  function slugify(text) {
+    return text.toLowerCase()
+      .replace(/[äÄ]/g, 'ae').replace(/[öÖ]/g, 'oe').replace(/[üÜ]/g, 'ue').replace(/[ß]/g, 'ss')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  function makeFolder(title) {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const ts = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    return `${ts}_${slugify(title)}`;
+  }
+
+  async function uploadFile(file, folder, index, total) {
+    statusText.textContent = `Datei ${index+1}/${total}: ${file.name}...`;
+
+    const presignedResp = await fetch('/storage/upload/presigned/batch/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({
+        files: [{ name: file.name, size: file.size, type: file.type }],
+        organization: '{{ organization.code }}',
+        folder: folder,
+      }),
+    });
+    const presignedData = await presignedResp.json();
+    if (!presignedData.success) throw new Error(presignedData.error || 'Presigned-URL fehlgeschlagen');
+
+    const upload = presignedData.uploads[0];
+
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', upload.url, true);
+      xhr.setRequestHeader('Content-Type', file.type);
+      xhr.upload.addEventListener('progress', function(e) {
+        if (e.lengthComputable) {
+          const filePct = Math.round((e.loaded / e.total) * 100);
+          const overallPct = Math.round(((index + e.loaded / e.total) / total) * 100);
+          progressBar.value = overallPct;
+          statusText.textContent = `Datei ${index+1}/${total}: ${file.name} (${filePct}%)`;
+        }
+      });
+      xhr.addEventListener('load', function() {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(`Upload fehlgeschlagen: ${file.name} (HTTP ${xhr.status})`));
+      });
+      xhr.addEventListener('error', () => reject(new Error(`Upload fehlgeschlagen: ${file.name}`)));
+      xhr.send(file);
+    });
+
+    await fetch(`/storage/upload/mark-uploaded/${upload.file_id}/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+    });
+
+    return { key: upload.key, file_id: upload.file_id, session_id: presignedData.session_id };
+  }
+
+  // Intercept form submit: upload files first, then submit
+  form.addEventListener('submit', async function(e) {
+    const files = getAllFiles();
+    const title = form.querySelector('[name=titel]').value.trim();
+
+    if (!title) return; // let browser validation handle it
+
+    // If no files, just submit normally
+    if (!files.length) return;
+
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Wird hochgeladen...';
+
+    // Clear previous upload data
+    form.querySelectorAll('input[data-upload-meta]').forEach(el => el.remove());
+    fileListContainer.innerHTML = '';
     progressContainer.classList.remove('hidden');
     progressBar.value = 0;
-    statusText.textContent = 'Presigned-URL wird angefordert...';
-    uploadResult.innerHTML = '';
 
-    try {
-      // 1. Get presigned URL
-      const presignedResp = await fetch('/storage/upload/presigned/batch/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken,
-        },
-        body: JSON.stringify({
-          files: [{ name: file.name, size: file.size, type: file.type }],
-          organization: '{{ request.user.organization.code }}',
-        }),
-      });
-      const presignedData = await presignedResp.json();
-      if (!presignedData.success) {
-        throw new Error('Presigned-URL konnte nicht erstellt werden.');
+    const folder = makeFolder(title);
+    let succeeded = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const result = await uploadFile(files[i], folder, i, files.length);
+
+        // Store upload metadata as hidden inputs
+        for (const [name, value] of Object.entries({
+          'upload_s3_keys': result.key,
+          'upload_file_names': files[i].name,
+          'upload_content_types': files[i].type,
+          'upload_file_sizes': files[i].size,
+        })) {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          input.value = value;
+          input.setAttribute('data-upload-meta', '');
+          form.appendChild(input);
+        }
+
+        const row = document.createElement('div');
+        row.className = 'alert alert-success text-sm py-1';
+        row.innerHTML = `<span>${files[i].name}</span>`;
+        fileListContainer.appendChild(row);
+        succeeded++;
+      } catch (err) {
+        const row = document.createElement('div');
+        row.className = 'alert alert-error text-sm py-1';
+        row.innerHTML = `<span>${files[i].name}: ${err.message}</span>`;
+        fileListContainer.appendChild(row);
       }
+    }
 
-      const upload = presignedData.uploads[0];
+    progressBar.value = 100;
+    statusText.textContent = `${succeeded}/${files.length} Dateien hochgeladen.`;
 
-      // 2. Upload to S3
-      statusText.textContent = 'Datei wird hochgeladen...';
-      await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('PUT', upload.url, true);
-        xhr.setRequestHeader('Content-Type', file.type);
-        xhr.upload.addEventListener('progress', function(e) {
-          if (e.lengthComputable) {
-            const pct = Math.round((e.loaded / e.total) * 100);
-            progressBar.value = pct;
-            statusText.textContent = `Hochgeladen: ${pct}%`;
-          }
-        });
-        xhr.addEventListener('load', function() {
-          if (xhr.status >= 200 && xhr.status < 300) resolve();
-          else reject(new Error(`Upload fehlgeschlagen (HTTP ${xhr.status})`));
-        });
-        xhr.addEventListener('error', () => reject(new Error('Upload fehlgeschlagen.')));
-        xhr.send(file);
-      });
-
-      // 3. Mark as uploaded
-      statusText.textContent = 'Upload wird bestätigt...';
-      await fetch(`/storage/upload/mark-uploaded/${upload.file_id}/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken,
-        },
-      });
-
-      // 4. Store metadata as hidden inputs
-      progressBar.value = 100;
-      statusText.textContent = 'Upload abgeschlossen.';
-
-      const hiddenFields = {
-        upload_session_id: presignedData.session_id,
-        upload_file_id: upload.file_id,
-        upload_s3_key: upload.key,
-        upload_file_name: file.name,
-        upload_content_type: file.type,
-        upload_file_size: file.size,
-      };
-
-      // Remove any previous upload hidden inputs
-      form.querySelectorAll('input[data-upload-meta]').forEach(el => el.remove());
-
-      for (const [name, value] of Object.entries(hiddenFields)) {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = name;
-        input.value = value;
-        input.setAttribute('data-upload-meta', '');
-        form.appendChild(input);
-      }
-
-      uploadResult.innerHTML = `
-        <div class="alert alert-success text-sm py-2">
-          <span>${file.name} erfolgreich hochgeladen.</span>
-        </div>`;
-    } catch (err) {
-      statusText.textContent = '';
-      progressContainer.classList.add('hidden');
-      uploadResult.innerHTML = `
-        <div class="alert alert-error text-sm py-2">
-          <span>${err.message || 'Upload fehlgeschlagen.'}</span>
-        </div>`;
+    // Now submit the form with the upload data
+    if (succeeded > 0) {
+      submitBtn.textContent = 'Wird gespeichert...';
+      form.submit();
+    } else {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Speichern';
     }
   });
 });

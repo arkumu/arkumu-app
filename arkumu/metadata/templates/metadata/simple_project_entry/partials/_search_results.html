@@ -1,15 +1,15 @@
 {% if results %}
-<ul class="menu bg-base-200 rounded-box max-h-60 overflow-y-auto shadow-lg absolute z-50 w-full">
-  {% for resource in results %}
+<ul class="dropdown-content bg-base-100 rounded-box z-[1] w-full p-2 shadow max-h-60 overflow-y-auto">
+  {% for item in results %}
   <li>
     <button type="button"
-            class="text-left"
-            onclick="addSelectedEntity('{{ dataset_name }}', '{{ resource.uri }}', '{{ resource.name|escapejs }}')">
-      {{ resource.name|default:resource.uri }}
+            class="w-full text-left px-3 py-2 rounded hover:bg-base-200 cursor-pointer"
+            onclick="addSelectedEntity('{{ dataset_name }}', '{{ item.uri }}', '{{ item.label|escapejs }}')">
+      {{ item.label }}
     </button>
   </li>
   {% endfor %}
 </ul>
-{% elif query is not None %}
+{% elif query %}
 <div class="p-2 text-sm text-base-content/60">Keine Ergebnisse</div>
 {% endif %}
