@@ -24,3 +24,34 @@
   background-color: oklch(var(--p) / 0.25) !important;
   color: oklch(var(--pc)) !important;
 }
+
+/* --- Design polish (backend only) --- */
+
+/* Smooth theme transitions on body */
+body.app-backend {
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+/* Button press feedback — excludes dropdown triggers to avoid breaking DaisyUI focus */
+.app-backend .btn:not([tabindex]):active {
+  transform: scale(0.97);
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Alert dismiss animation */
+.app-backend .alert.alert-dismissing {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1),
+              transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Serif headings should use normal weight — the typeface carries authority */
+.app-backend h1, .app-backend h2, .app-backend h3,
+.app-backend h4, .app-backend h5, .app-backend h6 {
+  font-weight: 400;
+}
+.app-backend .prose h1, .app-backend .prose h2, .app-backend .prose h3,
+.app-backend .prose h4, .app-backend .prose h5, .app-backend .prose h6 {
+  font-weight: 400;
+}

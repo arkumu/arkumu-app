@@ -75,6 +75,15 @@ module.exports = {
     require("daisyui"),
     function({ addBase, theme }) {
       addBase({
+        'body.app-backend': {
+          fontFamily: 'Inter, system-ui, sans-serif',
+        },
+        'body.app-backend h1, body.app-backend h2, body.app-backend h3, body.app-backend h4, body.app-backend h5, body.app-backend h6': {
+          fontFamily: '"DM Serif Display", Georgia, serif',
+        },
+        'body.app-backend .prose h1, body.app-backend .prose h2, body.app-backend .prose h3, body.app-backend .prose h4, body.app-backend .prose h5, body.app-backend .prose h6': {
+          fontFamily: '"DM Serif Display", Georgia, serif',
+        },
         ':root': {
           '--primary-bg': theme('colors.arkumu.light'),
           '--primary-hover': theme('colors.arkumu.light-hover'),
@@ -116,39 +125,39 @@ module.exports = {
       {
         // Custom "arkumu-backend" theme - use this for all backend development
         light: {
-          "primary": "#2B7EF2",           // Professional blue
-          "primary-content": "#ffffff",   // White text on primary
-          "secondary": "#666666",         // Neutral gray
-          "secondary-content": "#ffffff", // White text on secondary
-          "accent": "#5498F7",            // Light blue for highlights
-          "accent-content": "#ffffff",    // White text on accent
-          "neutral": "#1E1E1E",           // Dark neutral
-          "neutral-content": "#ffffff",   // White text on neutral
-          "base-100": "#ffffff",          // White background
-          "base-200": "#F8F7F4",          // Light gray background
-          "base-300": "#EBEBEB",          // Slightly darker gray
-          "base-content": "#1E1E1E",      // Dark text on base
-          "info": "#3ABFF8",              // Info blue
-          "success": "#36D399",           // Success green
-          "warning": "#FBBD23",           // Warning yellow
-          "error": "#F87272",             // Error red
+          "primary": "#2B7EF2",           // arkumu-blue
+          "primary-content": "#ffffff",
+          "secondary": "#666666",
+          "secondary-content": "#ffffff",
+          "accent": "#5498F7",
+          "accent-content": "#ffffff",
+          "neutral": "#1E1E1E",           // arkumu-dark
+          "neutral-content": "#ffffff",
+          "base-100": "#FAF9F6",          // arkumu-light (warm off-white)
+          "base-200": "#EBEBEB",          // arkumu-light-soft
+          "base-300": "#D9D9D9",          // arkumu-light-hover
+          "base-content": "#1E1E1E",      // arkumu-dark
+          "info": "#3ABFF8",
+          "success": "#36D399",
+          "warning": "#FBBD23",
+          "error": "#F87272",
         },
       },
       {
         // Dark theme for backend
         dark: {
-          "primary": "#2B7EF2",
+          "primary": "#2B7EF2",           // arkumu-blue
           "primary-content": "#ffffff",
-          "secondary": "#AFAFAF",
+          "secondary": "#AFAFAF",         // arkumu-light-passive
           "secondary-content": "#1E1E1E",
-          "accent": "#74ADFC",
+          "accent": "#74ADFC",            // arkumu-blue-passive
           "accent-content": "#1E1E1E",
-          "neutral": "#FAF9F6",
+          "neutral": "#FAF9F6",           // arkumu-light
           "neutral-content": "#1E1E1E",
-          "base-100": "#1E1E1E",
-          "base-200": "#2A2A2A",
-          "base-300": "#393939",
-          "base-content": "#FAF9F6",
+          "base-100": "#1E1E1E",          // arkumu-dark
+          "base-200": "#393939",          // arkumu-dark-hover
+          "base-300": "#434343",          // arkumu-dark-soft
+          "base-content": "#FAF9F6",      // arkumu-light
           "info": "#3ABFF8",
           "success": "#36D399",
           "warning": "#FBBD23",

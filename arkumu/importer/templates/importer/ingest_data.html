@@ -10,12 +10,12 @@
     
     <!-- Top Navigation Bar with Org Dropdown -->
     <div class="navbar bg-base-100 border-b border-base-300 min-h-16 px-4">
-        <div class="navbar-start">
+        <div class="navbar-start w-auto">
             <div class="flex items-center gap-4">
                 <h1 class="text-xl font-semibold">Metadata Ingestion</h1>
                 <div class="flex items-center gap-3">
                     <span class="text-sm font-medium">Organization:</span>
-                    <select name="organization" 
+                    <select name="organization"
                             class="select select-bordered select-sm"
                             id="organization-selector"
                             hx-get="{% url 'importer:ingest_data' %}"
@@ -34,8 +34,7 @@
                 </div>
             </div>
         </div>
-        <div class="divider divider-horizontal mx-1"></div>
-        
+
         <div class="navbar-end" id="navbar-end">
             {% if organization_id %}
                 {% include 'importer/partials/navbar_mapping_controls.html' %}
