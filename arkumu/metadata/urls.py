@@ -55,6 +55,7 @@ from arkumu.metadata.views.csv_mapping.views.execution_views import (
 )
 from arkumu.metadata.views.csv_mapping.views import mapping_analysis_views
 from arkumu.metadata.views import entity_creation_views, simplified_workspace_views
+from arkumu.metadata.views import simple_project_entry_views
 
 app_name = 'metadata'
 
@@ -479,4 +480,9 @@ urlpatterns = [
 
     # Tabular entity delete endpoint
     path('tabular/delete-entity/', tabular_views.TabularDeleteEntityView.as_view(), name='tabular_delete_entity'),
+
+    # Simple project entry
+    path('simple-project-entry/', simple_project_entry_views.SimpleProjectEntryView.as_view(), name='simple_project_entry'),
+    path('simple-project-entry/search/<str:dataset_name>/',
+         simple_project_entry_views.search_entities, name='simple_project_entry_search'),
     ]

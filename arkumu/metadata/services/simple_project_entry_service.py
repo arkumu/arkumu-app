@@ -5,9 +5,12 @@ by reusing EntityCreationService infrastructure.
 """
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, List, Optional
 
 from django.db import transaction
+
+logger = logging.getLogger(__name__)
 
 from arkumu.metadata.entity_creation.config import FieldConfig
 from arkumu.metadata.entity_creation.services import EntityCreationService
@@ -45,9 +48,10 @@ class SimpleProjectEntryService:
 
         # Title
         title_field = self._get_field("bevorzugter_titel")
-        if title_field:
-            binding = self._project_service.ensure_property_resource(title_field)
-            entity.set_property(binding.resource, title)
+        if not title_field:
+            raise ValueError("Field 'bevorzugter_titel' not found in project config")
+        binding = self._project_service.ensure_property_resource(title_field)
+        entity.set_property(binding.resource, title)
 
         # Projektart
         if projektart_uri:
@@ -94,8 +98,10 @@ class SimpleProjectEntryService:
             if not uri:
                 continue
             target = Resource.objects.filter(uri=uri).first()
-            if target:
-                Triple.objects.get_or_create(
+            if not target:
+                logger.warning("Target resource not found for URI: %s", uri)
+                continue
+            Triple.objects.get_or_create(
                     subject=project._resource,
                     predicate=predicate_resource,
                     object=target,
