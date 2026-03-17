@@ -167,15 +167,94 @@
 
     {# Submit #}
     <div class="flex justify-end mt-6">
-      <button type="submit" class="btn btn-primary gap-2" id="submit-btn">
+      <button type="button" class="btn btn-primary gap-2" id="review-btn" onclick="showConfirmation()">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
         Projekt erstellen
       </button>
+      <button type="submit" class="hidden" id="submit-btn"></button>
     </div>
   </form>
+
+  {# Confirmation Modal #}
+  <dialog id="confirm-modal" class="modal">
+    <div class="modal-box max-w-lg">
+      <h3 class="text-lg font-bold mb-4">Projekt erstellen?</h3>
+      <div class="space-y-3 text-sm" id="confirm-summary"></div>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('confirm-modal').close()">Abbrechen</button>
+        <button type="button" class="btn btn-primary gap-2" id="confirm-submit-btn" onclick="submitProject()">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          Bestätigen
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
 </div>
 
 <script>
+function showConfirmation() {
+  const form = document.getElementById('project-entry-form');
+  const title = form.querySelector('[name=titel]').value.trim();
+  if (!title) {
+    form.querySelector('[name=titel]').reportValidity();
+    return;
+  }
+
+  const altTitle = form.querySelector('[name=alternativer_titel]').value.trim();
+  const projektart = form.querySelector('[name=projektart_uri]');
+  const projektartLabel = projektart.selectedIndex > 0 ? projektart.options[projektart.selectedIndex].text : '';
+
+  function collectTags(containerId) {
+    const tags = [];
+    document.getElementById(containerId).querySelectorAll('span.badge').forEach(tag => {
+      const text = tag.querySelector('span') ? tag.querySelector('span').textContent.trim() : tag.firstChild.textContent.trim();
+      if (text) tags.push(text);
+    });
+    return tags;
+  }
+
+  const kategorien = collectTags('kategorie-selected');
+  const ereignisse = collectTags('ereignis-selected');
+  const akteure = collectTags('akteure-selected');
+
+  const files = [];
+  document.querySelectorAll('.file-slot').forEach(input => {
+    if (input.files && input.files[0]) files.push(input.files[0].name);
+  });
+
+  function row(label, value) {
+    if (!value) return '';
+    return `<div class="flex gap-2"><span class="font-medium text-base-content/60 min-w-[120px]">${label}:</span><span>${value}</span></div>`;
+  }
+  function tagList(label, items) {
+    if (!items.length) return '';
+    const badges = items.map(t => `<span class="badge badge-outline badge-sm">${t}</span>`).join(' ');
+    return `<div class="flex gap-2 items-start"><span class="font-medium text-base-content/60 min-w-[120px]">${label}:</span><div class="flex flex-wrap gap-1">${badges}</div></div>`;
+  }
+
+  let html = '';
+  html += row('Titel', title);
+  html += row('Alternativer Titel', altTitle);
+  html += row('Projektart', projektartLabel);
+  html += tagList('Kategorien', kategorien);
+  html += tagList('Ereignisse', ereignisse);
+  html += tagList('Akteure', akteure);
+  html += tagList('Dateien', files);
+
+  if (!altTitle && !projektartLabel && !kategorien.length && !ereignisse.length && !akteure.length && !files.length) {
+    html += `<div class="text-base-content/50 italic">Nur der Titel wird gespeichert.</div>`;
+  }
+
+  document.getElementById('confirm-summary').innerHTML = html;
+  document.getElementById('confirm-modal').showModal();
+}
+
+function submitProject() {
+  document.getElementById('confirm-modal').close();
+  document.getElementById('submit-btn').click();
+}
+
 const _fieldMap = {
   'Ereignis': {field: 'ereignis_uris', container: 'ereignis-selected', input: 'ereignis-search-input', results: 'ereignis-results'},
   'Akteurin': {field: 'akteure_uris', container: 'akteure-selected', input: 'akteure-search-input', results: 'akteure-results'},

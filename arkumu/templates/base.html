@@ -83,19 +83,11 @@
             <details>
               <summary>Metadata</summary>
               <ul class="bg-base-100 rounded-t-none p-2 z-[60]">
-                <li><a href="{% url 'metadata:metadata_entry' %}" class="{% if current_url_name in 'metadata_entry metadata_entry_section metadata_entry_submit metadata_entry_latest create_project create_event create_actor create_ort create_role create_digital_object create_equipment_software create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}active{% endif %}">Workspace</a></li>
-                <li><a href="{% url 'metadata:simple_project_entry' %}" class="{% if current_url_name == 'simple_project_entry' %}active{% endif %}">Neues Projekt</a></li>
                 <li><a href="{% url 'metadata:data_explorer' %}" class="{% if current_url_name == 'data_explorer' %}active{% endif %}">Data Explorer</a></li>
-                <li><a href="{% url 'metadata:controlled_vocab_overview' %}" class="{% if current_url_name in 'controlled_vocab_overview controlled_vocab_list controlled_vocab_create controlled_vocab_edit' %}active{% endif %}">Controlled Vocabs</a></li>
-                <li><a href="{% url 'metadata:entity_creation_workspace' %}" target="_blank" rel="noopener" class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">Metadata Raw</a></li>
+                <li><a href="{% url 'metadata:simple_project_entry' %}" class="{% if current_url_name == 'simple_project_entry' %}active{% endif %}">Neues Projekt</a></li>
+                <li><a href="{% url 'metadata:entity_creation_workspace' %}" class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset entity_workspace_table project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">Metadata Raw</a></li>
+                <li><a href="{% url 'metadata:controlled_vocab_overview' %}" class="{% if current_url_name in 'controlled_vocab_overview controlled_vocab_list controlled_vocab_create controlled_vocab_edit' %}active{% endif %}">Controlled Vocabularies</a></li>
                 <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">Mapping Editor</a></li>
-                <li><a href="{% url 'metadata:canonical_graph_view' %}" class="{% if current_url_name in 'canonical_graph_view canonical_graph_selectors canonical_graph_dataset_options canonical_graph_render' %}active{% endif %}">Canonical Graph</a></li>
-                <li><a href="{% url 'metadata:canonical_manifest_catalog' %}" class="{% if current_url_name in 'canonical_manifest_catalog' %}active{% endif %}">Canonical Manifest Catalog</a></li>
-                <li><a href="{% url 'metadata:canonical_data_catalog' %}" class="{% if current_url_name in 'canonical_data_catalog canonical_data_relationships canonical_data_load_more' %}active{% endif %}">Canonical Data Catalog</a></li>
-                <li><a href="{% url 'metadata:canonical_project_catalog' %}" class="{% if current_url_name in 'canonical_project_catalog canonical_project_record' %}active{% endif %}">Canonical Project Catalog</a></li>
-                <li><a href="{% url 'metadata:mask_entry' %}" class="{% if current_url_name == 'mask_entry' %}active{% endif %}">Mask Preview</a></li>
-                <li><a href="{% url 'metadata:mask_create' %}" class="{% if current_url_name == 'mask_create' %}active{% endif %}">Mask Create</a></li>
-                <li><a href="{% url 'metadata:unified_mask_workspace' %}" class="{% if current_url_name == 'unified_mask_workspace' %}active{% endif %}">Mask Workspace</a></li>
               </ul>
             </details>
           </li>
@@ -140,19 +132,11 @@
             <details>
               <summary>Metadata</summary>
               <ul class="bg-base-100 rounded-t-none p-2">
-                <li><a href="{% url 'metadata:metadata_entry' %}" class="{% if current_url_name in 'metadata_entry metadata_entry_section metadata_entry_submit metadata_entry_latest create_project create_event create_actor create_ort create_role create_digital_object create_equipment_software create_institution create_project_category create_project_type create_alternate_title create_description create_catchphrase' %}active{% endif %}">Workspace</a></li>
-                <li><a href="{% url 'metadata:simple_project_entry' %}" class="{% if current_url_name == 'simple_project_entry' %}active{% endif %}">Neues Projekt</a></li>
                 <li><a href="{% url 'metadata:data_explorer' %}" class="{% if current_url_name == 'data_explorer' %}active{% endif %}">Data Explorer</a></li>
-                <li><a href="{% url 'metadata:controlled_vocab_overview' %}" class="{% if current_url_name in 'controlled_vocab_overview controlled_vocab_list controlled_vocab_create controlled_vocab_edit' %}active{% endif %}">Controlled Vocabs</a></li>
-                <li><a href="{% url 'metadata:entity_creation_workspace' %}" target="_blank" rel="noopener" class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">Metadata Raw</a></li>
+                <li><a href="{% url 'metadata:simple_project_entry' %}" class="{% if current_url_name == 'simple_project_entry' %}active{% endif %}">Neues Projekt</a></li>
+                <li><a href="{% url 'metadata:entity_creation_workspace' %}" class="{% if current_url_name in 'entity_creation_workspace entity_workspace_dataset entity_workspace_table project_access_update entity_workspace_field_values entity_workspace_search entity_workspace_relationship_row entity_workspace_relationship_rows entity_workspace_select_suggestion entity_workspace_flow' %}active{% endif %}">Metadata Raw</a></li>
+                <li><a href="{% url 'metadata:controlled_vocab_overview' %}" class="{% if current_url_name in 'controlled_vocab_overview controlled_vocab_list controlled_vocab_create controlled_vocab_edit' %}active{% endif %}">Controlled Vocabularies</a></li>
                 <li><a href="{% url 'metadata:csv_mapping_editor' %}" class="{% if current_url_name == 'csv_mapping_editor' %}active{% endif %}">Mapping Editor</a></li>
-                <li><a href="{% url 'metadata:canonical_graph_view' %}" class="{% if current_url_name in 'canonical_graph_view canonical_graph_selectors canonical_graph_dataset_options canonical_graph_render' %}active{% endif %}">Canonical Graph</a></li>
-                <li><a href="{% url 'metadata:canonical_manifest_catalog' %}" class="{% if current_url_name in 'canonical_manifest_catalog' %}active{% endif %}">Canonical Manifest Catalog</a></li>
-                <li><a href="{% url 'metadata:canonical_data_catalog' %}" class="{% if current_url_name in 'canonical_data_catalog canonical_data_relationships canonical_data_load_more' %}active{% endif %}">Canonical Data Catalog</a></li>
-                <li><a href="{% url 'metadata:canonical_project_catalog' %}" class="{% if current_url_name in 'canonical_project_catalog canonical_project_record' %}active{% endif %}">Canonical Project Catalog</a></li>
-                <li><a href="{% url 'metadata:mask_entry' %}" class="{% if current_url_name == 'mask_entry' %}active{% endif %}">Mask Preview</a></li>
-                <li><a href="{% url 'metadata:mask_create' %}" class="{% if current_url_name == 'mask_create' %}active{% endif %}">Mask Create</a></li>
-                <li><a href="{% url 'metadata:unified_mask_workspace' %}" class="{% if current_url_name == 'unified_mask_workspace' %}active{% endif %}">Mask Workspace</a></li>
               </ul>
             </details>
           </li>

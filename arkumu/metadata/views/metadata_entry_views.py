@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
 
+from django.contrib.auth.mixins import UserPassesTestMixin
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
 from django.shortcuts import render
 from django.views import View
@@ -448,7 +449,12 @@ class MetadataEntryDashboardView(MetadataEntryMixin, TemplateView):
         return render(request, self.template_name, context)
 
 
-class MaskPreviewDashboardView(MaskPreviewMixin, TemplateView):
+class SuperuserRequiredMixin(UserPassesTestMixin):
+    def test_func(self):
+        return self.request.user.is_superuser
+
+
+class MaskPreviewDashboardView(SuperuserRequiredMixin, MaskPreviewMixin, TemplateView):
     """Read only preview for schema driven masks and their mapping bindings."""
 
     template_name = "metadata/mask_entry/dashboard.html"
@@ -460,7 +466,7 @@ class MaskPreviewDashboardView(MaskPreviewMixin, TemplateView):
         return render(request, self.template_name, context)
 
 
-class MaskCreateView(MaskCreateMixin, TemplateView):
+class MaskCreateView(SuperuserRequiredMixin, MaskCreateMixin, TemplateView):
     """Productive create form driven by the mask create phase."""
 
     template_name = "metadata/mask_create/dashboard.html"
@@ -495,7 +501,7 @@ class MaskCreateView(MaskCreateMixin, TemplateView):
         return render(request, self.template_name, context, status=400)
 
 
-class UnifiedMaskWorkspaceView(GeneralLoginRequiredMixin, CSVMappingTemplateHelperMixin, TemplateView):
+class UnifiedMaskWorkspaceView(SuperuserRequiredMixin, GeneralLoginRequiredMixin, CSVMappingTemplateHelperMixin, TemplateView):
     """Unified cross-institution workspace for mask navigation and create entry."""
 
     template_name = "metadata/unified_mask_workspace/dashboard.html"
