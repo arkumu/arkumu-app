@@ -101,3 +101,29 @@ class TestSimpleProjectEntryService:
             object=akteur,
             source=org,
         ).exists()
+
+    def test_create_digital_object_and_link_to_project(self):
+        org = self._make_org()
+        service = SimpleProjectEntryService(organization=org)
+        project = service.create_project(title="Project with DO")
+
+        do_entity = service.create_digital_object(
+            project=project,
+            s3_key="testorg/uploads/test.pdf",
+            file_name="test.pdf",
+            content_type="application/pdf",
+            file_size=1024,
+        )
+
+        assert do_entity._resource.resource_type == ResourceType.ENTITY
+        # Digital object should be linked to project
+        assert Triple.objects.filter(
+            subject=project._resource,
+            object=do_entity._resource,
+            source=org,
+        ).exists()
+        # Digital object should have dataset membership
+        assert Triple.objects.filter(
+            subject=do_entity._resource,
+            predicate__uri="http://purl.org/dc/terms/isPartOf",
+        ).exists()

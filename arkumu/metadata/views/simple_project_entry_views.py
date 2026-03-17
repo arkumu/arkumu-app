@@ -67,6 +67,18 @@ class SimpleProjectEntryView(LoginRequiredMixin, View):
                 ereignis_uris=ereignis_uris or None,
                 akteure_uris=akteure_uris or None,
             )
+
+            # Handle file upload digital object
+            upload_s3_key = request.POST.get("upload_s3_key", "").strip()
+            if upload_s3_key:
+                service.create_digital_object(
+                    project=entity,
+                    s3_key=upload_s3_key,
+                    file_name=request.POST.get("upload_file_name", ""),
+                    content_type=request.POST.get("upload_content_type", ""),
+                    file_size=int(request.POST.get("upload_file_size", 0)),
+                )
+
             messages.success(request, f"Projekt '{title}' wurde erfolgreich erstellt.")
             return redirect("metadata:entity_creation_workspace")
         except Exception:

@@ -71,6 +71,56 @@ class SimpleProjectEntryService:
 
         return entity
 
+    @transaction.atomic
+    def create_digital_object(
+        self,
+        *,
+        project: EntityResource,
+        s3_key: str,
+        file_name: str,
+        content_type: str,
+        file_size: int,
+    ) -> EntityResource:
+        """Create a digital object entity and link it to the project."""
+        do_service = EntityCreationService.for_key("digital_object", self.organization)
+        do_entity, _ = EntityResource.create_by_organization_and_dataset_name(
+            organization=self.organization,
+            dataset_name=do_service.dataset_resource_name,
+            base_uri=do_service.dataset_base_uri,
+        )
+        do_entity.set_type(do_service.ensure_class_resource())
+
+        # Set dateipfad (file path)
+        dateipfad_field = None
+        for field in do_service.config.fields:
+            if field.field_name == "dateipfad":
+                dateipfad_field = field
+                break
+        if dateipfad_field:
+            binding = do_service.ensure_property_resource(dateipfad_field)
+            do_entity.set_property(binding.resource, s3_key)
+
+        # Link digital object to project
+        predicate_uri = (
+            f"{self._project_service.base_uri}/properties/digitales-objekt"
+        )
+        predicate_resource, _ = Resource.objects.get_or_create(
+            uri=predicate_uri,
+            defaults={
+                "resource_type": ResourceType.PROPERTY,
+                "name": "Digitales Objekt",
+            },
+        )
+        Triple.objects.get_or_create(
+            subject=project._resource,
+            predicate=predicate_resource,
+            object=do_entity._resource,
+            source=self.organization,
+            defaults={"is_derived": False},
+        )
+
+        return do_entity
+
     def _get_field(self, field_name: str) -> Optional[FieldConfig]:
         for field in self._project_service.config.fields:
             if field.field_name == field_name:
