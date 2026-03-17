@@ -1,0 +1,15 @@
+{% if results %}
+<ul class="menu bg-base-200 rounded-box max-h-60 overflow-y-auto shadow-lg absolute z-50 w-full">
+  {% for resource in results %}
+  <li>
+    <button type="button"
+            class="text-left"
+            onclick="addSelectedEntity('{{ dataset_name }}', '{{ resource.uri }}', '{{ resource.name|escapejs }}')">
+      {{ resource.name|default:resource.uri }}
+    </button>
+  </li>
+  {% endfor %}
+</ul>
+{% elif query is not None %}
+<div class="p-2 text-sm text-base-content/60">Keine Ergebnisse</div>
+{% endif %}
