@@ -2,142 +2,175 @@
 {% block title %}Neues Projekt{% endblock %}
 
 {% block content %}
-<div class="max-w-3xl mx-auto py-8 px-4">
-  <h1 class="text-2xl font-bold mb-2">Neues Projekt erstellen</h1>
-  <p class="text-base-content/70 mb-6">Institution: <span class="font-semibold text-base-content">{{ organization.name }}</span></p>
+<div class="max-w-4xl mx-auto py-10 px-4">
+
+  {# Header #}
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold tracking-tight">Neues Projekt</h1>
+    <p class="mt-1 text-base-content/60">
+      <span class="inline-flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+        {{ organization.name }}
+      </span>
+    </p>
+  </div>
 
   <form method="post" id="project-entry-form">
     {% csrf_token %}
 
-    {# Section 1: Projekt #}
-    <div class="card bg-base-100 shadow mb-6">
-      <div class="card-body">
-        <h2 class="card-title text-lg">Projekt</h2>
+    <div class="grid gap-6">
 
-        <div class="form-control w-full mb-4">
-          <label class="label" for="titel">
-            <span class="label-text">Titel <span class="text-error">*</span></span>
-          </label>
-          <input type="text" id="titel" name="titel"
-                 class="input input-bordered w-full"
-                 required
-                 placeholder="Projekttitel eingeben">
-        </div>
-
-        <div class="form-control w-full mb-4">
-          <label class="label" for="alternativer_titel">
-            <span class="label-text">Alternativer Titel</span>
-          </label>
-          <input type="text" id="alternativer_titel" name="alternativer_titel"
-                 class="input input-bordered w-full"
-                 placeholder="Alternativer Titel (optional)">
-        </div>
-
-        <div class="form-control w-full mb-4">
-          <label class="label" for="projektart_uri">
-            <span class="label-text">Projektart</span>
-          </label>
-          <select id="projektart_uri" name="projektart_uri"
-                  class="select select-bordered w-full">
-            <option value="">— Projektart wählen —</option>
-            {% for uri, label in projektart_choices %}
-            <option value="{{ uri }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-
-        <div class="form-control w-full">
-          <label class="label">
-            <span class="label-text">Projektkategorie</span>
-          </label>
-          <div class="relative">
-            <input type="search"
-                   id="kategorie-search-input"
-                   name="q"
-                   placeholder="Projektkategorie suchen..."
-                   class="input input-bordered w-full"
-                   hx-get="{% url 'metadata:simple_project_entry_search_cv' vocab_key='project_categories' %}"
-                   hx-trigger="input changed delay:250ms"
-                   hx-target="#kategorie-results"
-                   hx-swap="innerHTML"
-                   autocomplete="off">
-            <div id="kategorie-results" class="relative"></div>
+      {# Section 1: Projekt #}
+      <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card-body">
+          <div class="flex items-center gap-2 mb-4">
+            <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            <h2 class="text-lg font-semibold">Projekt</h2>
           </div>
-          <div id="kategorie-selected" class="flex flex-wrap gap-2 mt-2"></div>
+
+          <div class="grid gap-4">
+            <div class="form-control w-full">
+              <label class="label" for="titel">
+                <span class="label-text font-medium">Titel <span class="text-error">*</span></span>
+              </label>
+              <input type="text" id="titel" name="titel"
+                     class="input input-bordered w-full focus:input-primary"
+                     required
+                     placeholder="Projekttitel eingeben">
+            </div>
+
+            <div class="form-control w-full">
+              <label class="label" for="alternativer_titel">
+                <span class="label-text font-medium">Alternativer Titel</span>
+              </label>
+              <input type="text" id="alternativer_titel" name="alternativer_titel"
+                     class="input input-bordered w-full focus:input-primary"
+                     placeholder="Optional">
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="form-control w-full">
+                <label class="label" for="projektart_uri">
+                  <span class="label-text font-medium">Projektart</span>
+                </label>
+                <select id="projektart_uri" name="projektart_uri"
+                        class="select select-bordered w-full focus:select-primary">
+                  <option value="">— Auswählen —</option>
+                  {% for uri, label in projektart_choices %}
+                  <option value="{{ uri }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div class="form-control w-full">
+                <label class="label">
+                  <span class="label-text font-medium">Projektkategorie</span>
+                </label>
+                <div class="relative">
+                  <input type="search"
+                         id="kategorie-search-input"
+                         name="q"
+                         placeholder="Suchen..."
+                         class="input input-bordered w-full focus:input-primary"
+                         hx-get="{% url 'metadata:simple_project_entry_search_cv' vocab_key='project_categories' %}"
+                         hx-trigger="input changed delay:250ms"
+                         hx-target="#kategorie-results"
+                         hx-swap="innerHTML"
+                         autocomplete="off">
+                  <div id="kategorie-results" class="relative"></div>
+                </div>
+                <div id="kategorie-selected" class="flex flex-wrap gap-2 mt-2"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    {# Section 2: Verknüpfungen #}
-    <div class="card bg-base-100 shadow mb-6">
-      <div class="card-body">
-        <h2 class="card-title text-lg">Verknüpfungen</h2>
-
-        {# Ereignis search #}
-        <div class="form-control w-full mb-4">
-          <label class="label">
-            <span class="label-text">Ereignis</span>
-          </label>
-          <div class="relative">
-            <input type="search"
-                   id="ereignis-search-input"
-                   name="q"
-                   placeholder="Ereignis suchen..."
-                   class="input input-bordered w-full"
-                   hx-get="{% url 'metadata:simple_project_entry_search' dataset_name='Ereignis' %}"
-                   hx-trigger="input changed delay:250ms"
-                   hx-target="#ereignis-results"
-                   hx-swap="innerHTML"
-                   autocomplete="off">
-            <div id="ereignis-results" class="relative"></div>
+      {# Section 2: Verknüpfungen #}
+      <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card-body">
+          <div class="flex items-center gap-2 mb-4">
+            <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+            <h2 class="text-lg font-semibold">Verknüpfungen</h2>
           </div>
-          <div id="ereignis-selected" class="flex flex-wrap gap-2 mt-2"></div>
-        </div>
 
-        {# Akteure search #}
-        <div class="form-control w-full">
-          <label class="label">
-            <span class="label-text">Akteure</span>
-          </label>
-          <div class="relative">
-            <input type="search"
-                   id="akteure-search-input"
-                   name="q"
-                   placeholder="Akteur suchen..."
-                   class="input input-bordered w-full"
-                   hx-get="{% url 'metadata:simple_project_entry_search' dataset_name='Akteurin' %}"
-                   hx-trigger="input changed delay:250ms"
-                   hx-target="#akteure-results"
-                   hx-swap="innerHTML"
-                   autocomplete="off">
-            <div id="akteure-results" class="relative"></div>
+          <div class="grid gap-4">
+            <div class="form-control w-full">
+              <label class="label">
+                <span class="label-text font-medium">Ereignis</span>
+              </label>
+              <div class="relative">
+                <input type="search"
+                       id="ereignis-search-input"
+                       name="q"
+                       placeholder="Ereignis suchen..."
+                       class="input input-bordered w-full focus:input-primary"
+                       hx-get="{% url 'metadata:simple_project_entry_search' dataset_name='Ereignis' %}"
+                       hx-trigger="input changed delay:250ms"
+                       hx-target="#ereignis-results"
+                       hx-swap="innerHTML"
+                       autocomplete="off">
+                <div id="ereignis-results" class="relative"></div>
+              </div>
+              <div id="ereignis-selected" class="flex flex-wrap gap-2 mt-2"></div>
+            </div>
+
+            <div class="form-control w-full">
+              <label class="label">
+                <span class="label-text font-medium">Akteure</span>
+              </label>
+              <div class="relative">
+                <input type="search"
+                       id="akteure-search-input"
+                       name="q"
+                       placeholder="Akteur suchen..."
+                       class="input input-bordered w-full focus:input-primary"
+                       hx-get="{% url 'metadata:simple_project_entry_search' dataset_name='Akteurin' %}"
+                       hx-trigger="input changed delay:250ms"
+                       hx-target="#akteure-results"
+                       hx-swap="innerHTML"
+                       autocomplete="off">
+                <div id="akteure-results" class="relative"></div>
+              </div>
+              <div id="akteure-selected" class="flex flex-wrap gap-2 mt-2"></div>
+            </div>
           </div>
-          <div id="akteure-selected" class="flex flex-wrap gap-2 mt-2"></div>
         </div>
       </div>
-    </div>
 
-    {# Section 3: Digitale Objekte #}
-    <div class="card bg-base-100 shadow mb-6">
-      <div class="card-body">
-        <h2 class="card-title text-lg">Digitale Objekte</h2>
-        <div id="file-slots">
-          <div class="form-control w-full mb-2">
-            <input type="file" class="file-input file-input-bordered w-full file-slot">
+      {# Section 3: Digitale Objekte #}
+      <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card-body">
+          <div class="flex items-center gap-2 mb-4">
+            <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+            <h2 class="text-lg font-semibold">Digitale Objekte</h2>
           </div>
+
+          <div id="file-slots">
+            <div class="form-control w-full mb-2">
+              <input type="file" class="file-input file-input-bordered w-full file-slot">
+            </div>
+          </div>
+          <button type="button" id="add-file-btn" class="btn btn-ghost btn-sm gap-1 mt-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Weitere Datei
+          </button>
+          <div id="upload-progress" class="mt-3 hidden">
+            <progress class="progress progress-primary w-full" value="0" max="100"></progress>
+            <span id="upload-status" class="text-sm text-base-content/60 mt-1 block"></span>
+          </div>
+          <div id="upload-file-list" class="mt-2 flex flex-col gap-1"></div>
         </div>
-        <button type="button" id="add-file-btn" class="btn btn-ghost btn-sm mt-1">+ Weitere Datei</button>
-        <div id="upload-progress" class="mt-2 hidden">
-          <progress class="progress progress-primary w-full" value="0" max="100"></progress>
-          <span id="upload-status" class="text-sm"></span>
-        </div>
-        <div id="upload-file-list" class="mt-2 flex flex-col gap-1"></div>
       </div>
+
     </div>
 
     {# Submit #}
-    <div class="flex justify-end">
-      <button type="submit" class="btn btn-primary" id="submit-btn">Speichern</button>
+    <div class="flex justify-end mt-6">
+      <button type="submit" class="btn btn-primary gap-2" id="submit-btn">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+        Projekt erstellen
+      </button>
     </div>
   </form>
 </div>
@@ -157,11 +190,11 @@ function addSelectedEntity(datasetName, uri, name) {
   if (container.querySelector(`input[value="${uri}"]`)) return;
 
   const tag = document.createElement('span');
-  tag.className = 'badge badge-lg gap-1 max-w-full';
+  tag.className = 'badge badge-outline gap-1 py-3 whitespace-normal h-auto text-left';
   tag.innerHTML = `
-    <span class="truncate" style="max-width:calc(100% - 2rem)" title="${name}">${name}</span>
+    ${name}
     <input type="hidden" name="${config.field}" value="${uri}">
-    <button type="button" class="btn btn-ghost btn-xs flex-shrink-0" onclick="this.parentElement.remove()">&times;</button>
+    <button type="button" class="btn btn-ghost btn-xs flex-shrink-0 hover:text-error" onclick="this.parentElement.remove()">&times;</button>
   `;
   container.appendChild(tag);
 
@@ -274,7 +307,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     e.preventDefault();
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Wird hochgeladen...';
+    submitBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Wird hochgeladen...';
 
     // Clear previous upload data
     form.querySelectorAll('input[data-upload-meta]').forEach(el => el.remove());
@@ -305,14 +338,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const row = document.createElement('div');
-        row.className = 'alert alert-success text-sm py-1';
-        row.innerHTML = `<span>${files[i].name}</span>`;
+        row.className = 'flex items-center gap-2 text-sm text-success';
+        row.innerHTML = `<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> ${files[i].name}`;
         fileListContainer.appendChild(row);
         succeeded++;
       } catch (err) {
         const row = document.createElement('div');
-        row.className = 'alert alert-error text-sm py-1';
-        row.innerHTML = `<span>${files[i].name}: ${err.message}</span>`;
+        row.className = 'flex items-center gap-2 text-sm text-error';
+        row.innerHTML = `<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg> ${files[i].name}: ${err.message}`;
         fileListContainer.appendChild(row);
       }
     }
@@ -322,11 +355,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Now submit the form with the upload data
     if (succeeded > 0) {
-      submitBtn.textContent = 'Wird gespeichert...';
+      submitBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Wird gespeichert...';
       form.submit();
     } else {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Speichern';
+      submitBtn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Projekt erstellen';
     }
   });
 });
