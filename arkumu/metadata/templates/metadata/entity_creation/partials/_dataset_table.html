@@ -1,0 +1,62 @@
+{% if search_query %}
+<div class="mb-2 text-sm text-base-content/70">
+  Ergebnisse für "{{ search_query }}" ({{ total_count }})
+</div>
+{% endif %}
+
+<div class="mb-3">
+  <input type="search"
+         name="q"
+         value="{{ search_query }}"
+         placeholder="Suchen..."
+         class="input input-bordered input-sm w-full max-w-xs"
+         hx-get="{{ search_url }}"
+         hx-trigger="input changed delay:300ms"
+         hx-target="#dataset-panel"
+         hx-swap="innerHTML"
+         hx-include="this"
+         autocomplete="off">
+</div>
+
+{% if rows %}
+<div class="overflow-x-auto">
+  <table class="table table-sm table-zebra">
+    <thead>
+      <tr>
+        <th>#</th>
+        {% for col in columns %}
+        <th>{{ col }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr class="cursor-pointer hover"
+          hx-get="{{ row.load_url }}"
+          hx-target="#dataset-panel"
+          hx-swap="innerHTML">
+        <td class="text-base-content/50 text-xs">{{ row.index }}</td>
+        {% for cell in row.cells %}
+        <td class="max-w-xs truncate">{{ cell }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if has_more %}
+<div class="mt-2 text-center">
+  <button type="button"
+          class="btn btn-ghost btn-sm"
+          hx-get="{{ next_page_url }}"
+          hx-target="#dataset-panel"
+          hx-swap="innerHTML">
+    Mehr laden ({{ total_count }} gesamt)
+  </button>
+</div>
+{% endif %}
+
+{% else %}
+<div class="text-sm text-base-content/60 py-4">Keine Einträge gefunden.</div>
+{% endif %}

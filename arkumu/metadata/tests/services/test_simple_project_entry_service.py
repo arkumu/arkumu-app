@@ -1,6 +1,7 @@
 import pytest
 
 from arkumu.metadata.services.simple_project_entry_service import SimpleProjectEntryService
+from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.users.models import Organization
@@ -17,10 +18,70 @@ def rdf_type_resource(db):
     )
 
 
+# Minimal schema_manifest that mirrors what a real mapping provides
+_TEST_MANIFEST = {
+    "Projekt": {
+        "entity_type": {
+            "uri": "http://arkumu.org/data/testorg/types/projekt",
+            "name": "Projekt",
+            "canonical_uri": "http://arkumu.org/data/types/projekt",
+        },
+        "properties": {
+            "Titel": {
+                "uri": "http://arkumu.org/data/testorg/properties/titel",
+                "name": "Titel",
+                "canonical_uri": "http://arkumu.org/data/properties/bevorzugter-titel",
+            },
+            "Projektart": {
+                "uri": "http://arkumu.org/data/testorg/properties/projektart",
+                "name": "Projektart",
+                "canonical_uri": "http://arkumu.org/data/properties/projektart",
+            },
+            "Ereignis": {
+                "uri": "http://arkumu.org/data/testorg/properties/ereignis",
+                "name": "Ereignis",
+                "canonical_uri": "http://arkumu.org/data/properties/ereignis",
+            },
+            "Akteur": {
+                "uri": "http://arkumu.org/data/testorg/properties/akteur",
+                "name": "Akteur",
+                "canonical_uri": "http://arkumu.org/data/properties/akteur",
+            },
+            "Digitales Objekt": {
+                "uri": "http://arkumu.org/data/testorg/properties/digitales-objekt",
+                "name": "Digitales Objekt",
+                "canonical_uri": "http://arkumu.org/data/properties/digitales-objekt",
+            },
+        },
+    },
+    "Digitales_Objekt": {
+        "entity_type": {
+            "uri": "http://arkumu.org/data/testorg/types/digitales-objekt",
+            "name": "Digitales_Objekt",
+            "canonical_uri": "http://arkumu.org/data/types/digitales-objekt",
+        },
+        "properties": {
+            "Dateipfad": {
+                "uri": "http://arkumu.org/data/testorg/properties/dateipfad",
+                "name": "Dateipfad",
+                "canonical_uri": "http://arkumu.org/data/properties/dateipfad",
+            },
+        },
+    },
+}
+
+
 @pytest.mark.django_db
 class TestSimpleProjectEntryService:
     def _make_org(self):
-        return Organization.objects.create(code="testorg", name="Test Org")
+        org = Organization.objects.create(code="testorg", name="Test Org")
+        Mapping.objects.create(
+            name="test-mapping",
+            organization_id=org.code,
+            is_active=True,
+            mapping_config={"schema_manifest": _TEST_MANIFEST},
+        )
+        return org
 
     def test_create_project_creates_entity_and_dataset_membership(self):
         org = self._make_org()
@@ -28,7 +89,6 @@ class TestSimpleProjectEntryService:
         entity = service.create_project(title="My Test Project")
 
         assert entity._resource.resource_type == ResourceType.ENTITY
-        # Must have isPartOf triple to "Projekt" dataset
         assert Triple.objects.filter(
             subject=entity._resource,
             predicate__uri="http://purl.org/dc/terms/isPartOf",
@@ -40,12 +100,13 @@ class TestSimpleProjectEntryService:
         service = SimpleProjectEntryService(organization=org)
         entity = service.create_project(title="My Test Project")
 
-        title_triples = Triple.objects.filter(
+        # Title uses the mapping-resolved URI, not the canonical one
+        assert Triple.objects.filter(
             subject=entity._resource,
+            predicate__uri="http://arkumu.org/data/testorg/properties/titel",
             object__value="My Test Project",
             object__resource_type=ResourceType.LITERAL,
-        )
-        assert title_triples.exists()
+        ).exists()
 
     def test_create_project_sets_projektart(self):
         org = self._make_org()
@@ -61,6 +122,7 @@ class TestSimpleProjectEntryService:
         )
         assert Triple.objects.filter(
             subject=entity._resource,
+            predicate__uri="http://arkumu.org/data/testorg/properties/projektart",
             object=projektart,
         ).exists()
 
@@ -79,6 +141,7 @@ class TestSimpleProjectEntryService:
         )
         assert Triple.objects.filter(
             subject=entity._resource,
+            predicate__uri="http://arkumu.org/data/testorg/properties/ereignis",
             object=ereignis,
             source=org,
         ).exists()
@@ -98,6 +161,7 @@ class TestSimpleProjectEntryService:
         )
         assert Triple.objects.filter(
             subject=entity._resource,
+            predicate__uri="http://arkumu.org/data/testorg/properties/akteur",
             object=akteur,
             source=org,
         ).exists()
@@ -116,13 +180,12 @@ class TestSimpleProjectEntryService:
         )
 
         assert do_entity._resource.resource_type == ResourceType.ENTITY
-        # Digital object should be linked to project
         assert Triple.objects.filter(
             subject=project._resource,
+            predicate__uri="http://arkumu.org/data/testorg/properties/digitales-objekt",
             object=do_entity._resource,
             source=org,
         ).exists()
-        # Digital object should have dataset membership
         assert Triple.objects.filter(
             subject=do_entity._resource,
             predicate__uri="http://purl.org/dc/terms/isPartOf",

@@ -2,6 +2,7 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
+from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.services.simple_project_entry_service import SimpleProjectEntryService
@@ -19,10 +20,34 @@ def rdf_type_resource(db):
     )
 
 
+_TEST_MANIFEST = {
+    "Projekt": {
+        "entity_type": {
+            "uri": "http://arkumu.org/data/testorg/types/projekt",
+            "name": "Projekt",
+            "canonical_uri": "http://arkumu.org/data/types/projekt",
+        },
+        "properties": {
+            "Titel": {
+                "uri": "http://arkumu.org/data/testorg/properties/titel",
+                "name": "Titel",
+                "canonical_uri": "http://arkumu.org/data/properties/bevorzugter-titel",
+            },
+        },
+    },
+}
+
+
 @pytest.mark.django_db
 class TestSimpleProjectEntryIntegration:
     def _setup(self):
         org = Organization.objects.create(code="testorg", name="Test Org")
+        Mapping.objects.create(
+            name="test-mapping",
+            organization_id=org.code,
+            is_active=True,
+            mapping_config={"schema_manifest": _TEST_MANIFEST},
+        )
         user = User.objects.create_user(
             username="testuser", password="testpass", organization=org
         )
@@ -34,7 +59,6 @@ class TestSimpleProjectEntryIntegration:
         service = SimpleProjectEntryService(organization=org)
         entity = service.create_project(title="Workspace Test Project")
 
-        # The workspace listing queries for entities with isPartOf to a "Projekt" dataset
         is_part_of_triple = Triple.objects.filter(
             subject=entity._resource,
             predicate__uri="http://purl.org/dc/terms/isPartOf",
@@ -43,14 +67,13 @@ class TestSimpleProjectEntryIntegration:
 
         assert is_part_of_triple is not None
         assert is_part_of_triple.object.resource_type == ResourceType.IRI
-        # Dataset name must match what ProjectWorkspaceListingService expects
         assert is_part_of_triple.object.name == "Projekt"
 
     def test_view_requires_login(self):
         client = Client()
         url = reverse("metadata:simple_project_entry")
         response = client.get(url)
-        assert response.status_code == 302  # redirect to login
+        assert response.status_code == 302
 
     def test_view_renders_for_authenticated_user(self):
         org, user = self._setup()

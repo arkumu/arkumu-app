@@ -56,17 +56,30 @@
                   {% if main_entities %}
                     <div class="flex flex-wrap gap-2">
                       {% for dataset in main_entities %}
-                        <button type="button"
-                                class="btn btn-sm {% if dataset.dataset_name == active_dataset_name %}btn-primary{% else %}btn-outline{% endif %}"
-                                data-dataset-button
-                                data-dataset-name="{{ dataset.dataset_name }}"
-                                hx-get="{% url 'metadata:entity_workspace_dataset' selected_mapping.id %}?dataset={{ dataset.dataset_name|urlencode }}"
-                                hx-target="#dataset-panel"
-                                hx-swap="innerHTML"
-                                hx-push-url="false">
-                          <span class="truncate max-w-[150px]">{{ dataset.display_label }}</span>
-                          <div class="badge badge-sm">{{ dataset.entity_count }}</div>
-                        </button>
+                        <div class="join">
+                          <button type="button"
+                                  class="btn btn-sm join-item {% if dataset.dataset_name == active_dataset_name %}btn-primary{% else %}btn-outline{% endif %}"
+                                  data-dataset-button
+                                  data-dataset-name="{{ dataset.dataset_name }}"
+                                  hx-get="{% url 'metadata:entity_workspace_dataset' selected_mapping.id %}?dataset={{ dataset.dataset_name|urlencode }}"
+                                  hx-target="#dataset-panel"
+                                  hx-swap="innerHTML"
+                                  hx-push-url="false">
+                            <span class="truncate max-w-[150px]">{{ dataset.display_label }}</span>
+                            <div class="badge badge-sm">{{ dataset.entity_count }}</div>
+                          </button>
+                          <button type="button"
+                                  class="btn btn-sm btn-outline join-item"
+                                  title="Tabelle anzeigen"
+                                  data-dataset-button
+                                  data-dataset-name="{{ dataset.dataset_name }}"
+                                  hx-get="{% url 'metadata:entity_workspace_table' selected_mapping.id %}?dataset={{ dataset.dataset_name|urlencode }}"
+                                  hx-target="#dataset-panel"
+                                  hx-swap="innerHTML"
+                                  hx-push-url="false">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18M3 6h18M3 18h18"/></svg>
+                          </button>
+                        </div>
                       {% endfor %}
                     </div>
                   {% else %}

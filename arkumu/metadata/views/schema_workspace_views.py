@@ -3920,6 +3920,116 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
         return HttpResponse(html, status=400)
 
 
+class DatasetTableView(LoginRequiredMixin, View):
+    """HTMX endpoint that renders a tabular listing of entities in a dataset."""
+
+    def get(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        dataset_name = request.GET.get("dataset")
+        if not dataset_name:
+            return HttpResponseBadRequest("Missing dataset parameter")
+
+        service = _get_schema_service(request, mapping_id)
+        search_query = request.GET.get("q", "").strip()
+        page = int(request.GET.get("page", 1))
+        per_page = 50
+
+        # Get the dataset resource
+        schema = service.get_dataset_schema(dataset_name)
+        dataset_resource = schema.get("dataset_resource")
+        if not dataset_resource:
+            dataset_resource = service._resolve_dataset_resource(dataset_name, schema)
+
+        if not dataset_resource:
+            return render(request, "metadata/entity_creation/partials/_dataset_table.html", {
+                "rows": [], "columns": [], "search_query": search_query,
+                "search_url": "", "total_count": 0, "has_more": False,
+            })
+
+        # Get field metadata to determine columns
+        field_metadata = service.get_field_metadata(dataset_name)
+        columns = []
+        col_uris = []
+        for col_name, meta in field_metadata.items():
+            prop_uri = meta.get("property_uri")
+            if not prop_uri:
+                continue
+            label = str(meta.get("property_label") or meta.get("column_name") or col_name)
+            columns.append(label)
+            col_uris.append(str(prop_uri))
+            if len(columns) >= 5:
+                break
+
+        # Get entity URIs in this dataset
+        is_part_of_uri = "http://purl.org/dc/terms/isPartOf"
+        entity_uris_qs = Triple.objects.filter(
+            predicate__uri=is_part_of_uri,
+            object=dataset_resource,
+        ).values_list("subject__uri", flat=True)
+
+        if search_query:
+            from django.db.models import Q
+            entity_uris_qs = entity_uris_qs.filter(
+                Q(subject__name__icontains=search_query)
+                | Q(subject__subject_triples__object__resource_type=ResourceType.LITERAL,
+                    subject__subject_triples__object__value__icontains=search_query)
+            ).distinct()
+
+        total_count = entity_uris_qs.count()
+        start = (page - 1) * per_page
+        entity_uris = list(entity_uris_qs[start:start + per_page])
+
+        # Batch-load literal values for these entities
+        if entity_uris and col_uris:
+            value_triples = (
+                Triple.objects.filter(
+                    subject__uri__in=entity_uris,
+                    predicate__uri__in=col_uris,
+                    object__resource_type=ResourceType.LITERAL,
+                )
+                .select_related("subject", "predicate", "object")
+            )
+            # Build lookup: {entity_uri: {predicate_uri: value}}
+            value_map: Dict[str, Dict[str, str]] = {}
+            for t in value_triples:
+                entity_vals = value_map.setdefault(t.subject.uri, {})
+                if t.predicate.uri not in entity_vals:
+                    entity_vals[t.predicate.uri] = t.object.value or t.object.name or ""
+        else:
+            value_map = {}
+
+        # Build table rows
+        dataset_endpoint = reverse("metadata:entity_workspace_dataset", args=[service.mapping.id])
+        rows = []
+        for idx, uri in enumerate(entity_uris, start=start + 1):
+            vals = value_map.get(uri, {})
+            cells = [vals.get(col_uri, "") for col_uri in col_uris]
+            entity_label = next((c for c in cells if c), uri.rsplit("/", 1)[-1])
+            params = urlencode({"dataset": dataset_name, "mode": "load", "entity_uri": uri, "entity_label": entity_label})
+            rows.append({
+                "index": idx,
+                "cells": cells,
+                "load_url": f"{dataset_endpoint}?{params}",
+            })
+
+        base_params = {"dataset": dataset_name}
+        if search_query:
+            base_params["q"] = search_query
+        search_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode({"dataset": dataset_name})
+
+        next_page_params = dict(base_params, page=page + 1)
+        next_page_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode(next_page_params)
+
+        return render(request, "metadata/entity_creation/partials/_dataset_table.html", {
+            "rows": rows,
+            "columns": columns,
+            "search_query": search_query,
+            "search_url": search_url,
+            "total_count": total_count,
+            "has_more": (start + per_page) < total_count,
+            "next_page_url": next_page_url,
+        })
+
+
 class DeleteEntityView(LoginRequiredMixin, View):
     """HTMX view to delete an entity and all its associated triples."""
 
