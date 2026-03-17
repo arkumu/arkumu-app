@@ -2233,7 +2233,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         schema_service = _get_schema_service(request)
         if not schema_service:
             return HttpResponseRedirect("/metadata/"
-                                        "workspace/legacy/")
+                                        "workspace/")
 
         entity_uri = request.GET.get("uri", "")
         if not entity_uri:
@@ -2363,7 +2363,7 @@ class SimplifiedProjectEditView(LoginRequiredMixin, View):
         """Save the edited project data."""
         schema_service = _get_schema_service(request)
         if not schema_service:
-            return HttpResponseRedirect("/metadata/workspace/legacy/")
+            return HttpResponseRedirect("/metadata/workspace/")
 
         entity_uri = request.POST.get("entity_uri") or None
 
