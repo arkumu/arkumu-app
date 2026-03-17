@@ -34,6 +34,7 @@ _CANONICAL = {
     "digitales_objekt_type": "http://arkumu.org/data/types/digitales-objekt",
     "dateipfad": "http://arkumu.org/data/properties/dateipfad",
     "digitales_objekt_link": "http://arkumu.org/data/properties/digitales-objekt",
+    "alternativer_titel": "http://arkumu.org/data/properties/alternativer-titel",
 }
 
 
@@ -102,6 +103,7 @@ class SimpleProjectEntryService:
         self,
         *,
         title: str,
+        alternativer_titel: Optional[str] = None,
         projektart_uri: Optional[str] = None,
         ereignis_uris: Optional[List[str]] = None,
         akteure_uris: Optional[List[str]] = None,
@@ -163,6 +165,10 @@ class SimpleProjectEntryService:
                         source=self.organization,
                         defaults={"is_derived": False},
                     )
+
+        # Alternativer Titel
+        if alternativer_titel:
+            self._set_alternativer_titel(entity, alternativer_titel)
 
         # Ereignis links
         if ereignis_uris:
@@ -254,6 +260,92 @@ class SimpleProjectEntryService:
             logger.warning("S3FileObject not found for key=%s org=%s", s3_key, self.organization.code)
 
         return do_entity
+
+    def _set_alternativer_titel(self, project: EntityResource, text: str) -> None:
+        """Set alternative title — mapping decides where it goes.
+
+        Non-canonical orgs (khm, hmt): alternativer-titel is a literal on the project.
+        Canonical orgs (fuk, det, rsh): alternativer-titel lives on a separate
+        Alternativer_Titel entity linked to the project via alternativer-titel-set.
+        The mapping's schema_manifest tells us which case applies.
+        """
+        canonical_uri = _CANONICAL["alternativer_titel"]
+
+        # Case 1: property exists directly on the project dataset → literal
+        proj_prop_uri = self.resolver.find_property_uri(self._project_ds["config"], canonical_uri)
+        if proj_prop_uri:
+            pred = _ensure_predicate(proj_prop_uri, "Alternativer Titel")
+            literal, _ = Resource.objects.get_or_create(
+                resource_type=ResourceType.LITERAL,
+                value=text,
+                defaults={"name": text[:100]},
+            )
+            Triple.objects.create(
+                subject=project._resource,
+                predicate=pred,
+                object=literal,
+                source=self.organization,
+            )
+            return
+
+        # Case 2: property lives on a separate entity type → create sub-entity and link
+        alt_titel_ds = self.resolver.find_dataset("http://arkumu.org/data/types/alternativer-titel")
+        if not alt_titel_ds:
+            logger.warning("No alternativer-titel dataset or property found in mapping for '%s'", self.organization.code)
+            return
+
+        base_uri = "http://arkumu.org/data"
+        alt_entity, _ = EntityResource.create_by_organization_and_dataset_name(
+            organization=self.organization,
+            dataset_name=alt_titel_ds["name"],
+            base_uri=base_uri,
+        )
+
+        # Set rdf:type
+        type_uri = alt_titel_ds["entity_type"].get("uri", "")
+        if type_uri:
+            type_resource, _ = Resource.objects.get_or_create(
+                uri=type_uri,
+                defaults={"resource_type": ResourceType.CLASS, "name": alt_titel_ds["name"]},
+            )
+            rdf_type = Resource.objects.get(uri="http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+            Triple.objects.get_or_create(
+                subject=alt_entity._resource,
+                predicate=rdf_type,
+                object=type_resource,
+                defaults={"source": self.organization},
+            )
+
+        # Set the text value on the sub-entity
+        prop_uri = self.resolver.find_property_uri(alt_titel_ds["config"], canonical_uri)
+        if prop_uri:
+            pred = _ensure_predicate(prop_uri, "Alternativer Titel")
+            literal, _ = Resource.objects.get_or_create(
+                resource_type=ResourceType.LITERAL,
+                value=text,
+                defaults={"name": text[:100]},
+            )
+            Triple.objects.create(
+                subject=alt_entity._resource,
+                predicate=pred,
+                object=literal,
+                source=self.organization,
+            )
+
+        # Link sub-entity to project via alternativer-titel-set
+        link_uri = self.resolver.find_property_uri_across_datasets(
+            _CANONICAL["projekt_type"],
+            "http://arkumu.org/data/properties/alternativer-titel-set",
+        )
+        if link_uri:
+            pred = _ensure_predicate(link_uri, "Alternativer Titel-Set")
+            Triple.objects.get_or_create(
+                subject=project._resource,
+                predicate=pred,
+                object=alt_entity._resource,
+                source=self.organization,
+                defaults={"is_derived": False},
+            )
 
     def _link_entities(
         self,

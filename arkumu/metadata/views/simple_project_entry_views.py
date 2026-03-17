@@ -64,6 +64,7 @@ class SimpleProjectEntryView(LoginRequiredMixin, View):
             return redirect("metadata:metadata_entry")
 
         title = request.POST.get("titel", "").strip()
+        alternativer_titel = request.POST.get("alternativer_titel", "").strip()
         projektart_uri = request.POST.get("projektart_uri", "").strip()
         ereignis_uris = request.POST.getlist("ereignis_uris")
         akteure_uris = request.POST.getlist("akteure_uris")
@@ -76,6 +77,7 @@ class SimpleProjectEntryView(LoginRequiredMixin, View):
         try:
             entity = service.create_project(
                 title=title,
+                alternativer_titel=alternativer_titel or None,
                 projektart_uri=projektart_uri or None,
                 ereignis_uris=ereignis_uris or None,
                 akteure_uris=akteure_uris or None,

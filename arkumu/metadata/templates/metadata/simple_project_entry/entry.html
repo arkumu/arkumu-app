@@ -24,6 +24,15 @@
                  placeholder="Projekttitel eingeben">
         </div>
 
+        <div class="form-control w-full mb-4">
+          <label class="label" for="alternativer_titel">
+            <span class="label-text">Alternativer Titel</span>
+          </label>
+          <input type="text" id="alternativer_titel" name="alternativer_titel"
+                 class="input input-bordered w-full"
+                 placeholder="Alternativer Titel (optional)">
+        </div>
+
         <div class="form-control w-full">
           <label class="label" for="projektart_uri">
             <span class="label-text">Projektart</span>
@@ -51,6 +60,7 @@
           </label>
           <div class="relative">
             <input type="search"
+                   id="ereignis-search-input"
                    name="q"
                    placeholder="Ereignis suchen..."
                    class="input input-bordered w-full"
@@ -71,6 +81,7 @@
           </label>
           <div class="relative">
             <input type="search"
+                   id="akteure-search-input"
                    name="q"
                    placeholder="Akteur suchen..."
                    class="input input-bordered w-full"
@@ -120,16 +131,18 @@ function addSelectedEntity(datasetName, uri, name) {
   if (container.querySelector(`input[value="${uri}"]`)) return;
 
   const tag = document.createElement('span');
-  tag.className = 'badge badge-lg gap-1';
+  tag.className = 'badge badge-lg gap-1 max-w-full';
   tag.innerHTML = `
-    ${name}
+    <span class="truncate" style="max-width:calc(100% - 2rem)" title="${name}">${name}</span>
     <input type="hidden" name="${fieldName}" value="${uri}">
-    <button type="button" class="btn btn-ghost btn-xs" onclick="this.parentElement.remove()">&times;</button>
+    <button type="button" class="btn btn-ghost btn-xs flex-shrink-0" onclick="this.parentElement.remove()">&times;</button>
   `;
   container.appendChild(tag);
 
   const resultsId = datasetName === 'Ereignis' ? 'ereignis-results' : 'akteure-results';
+  const inputId = datasetName === 'Ereignis' ? 'ereignis-search-input' : 'akteure-search-input';
   document.getElementById(resultsId).innerHTML = '';
+  document.getElementById(inputId).value = '';
 }
 
 document.addEventListener('DOMContentLoaded', function() {
