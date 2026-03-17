@@ -54,6 +54,8 @@ RUN apt-get update -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::
   graphviz \
   # entrypoint
   wait-for-it \
+  # drop root after entrypoint
+  gosu \
   # cleaning up unused files
   && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
   && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/archives/partial/*
@@ -76,13 +78,17 @@ RUN chmod +x /start
 # copy application code to WORKDIR
 COPY --chown=django:django . ${APP_HOME}
 
-# make django owner of the WORKDIR directory as well.
-RUN chown -R django:django ${APP_HOME}
+# WORKDIR is created as root; give django ownership so it can create dirs at runtime
+RUN chown django:django ${APP_HOME}
 
 USER django
 
 RUN DATABASE_URL="" \
   DJANGO_SETTINGS_MODULE="config.settings.test" \
   python manage.py compilemessages
+
+# Switch back to root so the entrypoint can fix /etc/resolv.conf permissions
+# before dropping to django via gosu.
+USER root
 
 ENTRYPOINT ["/entrypoint"]

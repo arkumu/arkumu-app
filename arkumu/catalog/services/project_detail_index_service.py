@@ -11,7 +11,6 @@ from arkumu.catalog.services.triple_relationship_service import TripleRelationsh
 from arkumu.metadata.models.resource import Resource
 from arkumu.metadata.services.canonical_graph_service import CanonicalGraphService
 from arkumu.projects import ProjectRecord
-from arkumu.projects.services.snapshot_service import ProjectSnapshotService
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +19,8 @@ class ProjectDetailIndexService:
     """Build a single ProjectRecord without triggering a full snapshot rebuild."""
 
     def __init__(self) -> None:
+        from arkumu.projects.services.snapshot_service import ProjectSnapshotService
+
         self.snapshot_service = ProjectSnapshotService()
 
     def get_record(
@@ -91,6 +92,8 @@ class ProjectDetailIndexService:
                     storage_files_map[str(file_obj.related_resource_id)].append(file_obj)
         except Exception:
             storage_files_map = defaultdict(list)
+
+        from arkumu.projects.services.snapshot_service import ProjectSnapshotService
 
         triple_service = TripleRelationshipService(org_code)
         snapshot_builder = ProjectSnapshotService(relationship_org_code=org_code)

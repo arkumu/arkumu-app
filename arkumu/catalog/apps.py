@@ -51,12 +51,13 @@ class CatalogConfig(AppConfig):
             except Exception:
                 logger.exception("CatalogConfig: failed to rebuild project index")
 
-        # Run in thread to avoid async context issues with ASGI
-        threading.Thread(target=_warm_wikidata_cache, daemon=True).start()
-
         # Skip heavy initialization for management commands and Huey workers
-        skip_commands = ('migrate', 'makemigrations', 'run_huey')
+        skip_commands = ('migrate', 'makemigrations', 'run_huey', 'collectstatic')
         is_management_cmd = any(cmd in sys.argv for cmd in skip_commands)
+
+        # Warm Wikidata cache (skip for management commands when tables may not exist)
+        if not is_management_cmd:
+            threading.Thread(target=_warm_wikidata_cache, daemon=True).start()
 
         # Rebuild index if empty (skip for management commands and Huey)
         if not is_management_cmd:

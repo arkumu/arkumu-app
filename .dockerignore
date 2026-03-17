@@ -11,3 +11,13 @@ venv
 .git
 .envs/
 .ipython/
+.venv/
+node_modules/
+staticfiles/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.playwright-mcp/
+backup_*.sql.gz
+*.sql.gz
+compose/production/aws/

@@ -231,10 +231,7 @@ class ResourceGraphService:
                 'fontsize': '10',
                 'style': 'filled,rounded',
                 'shape': 'box',
-                'margin': '0.2,0.1',
-                'width': '1.2',
-                'height': '0.6',
-                'fixedsize': 'true',
+                'margin': '0.25,0.15',
             },
             edge_attr={
                 'fontname': 'Arial',

@@ -55,12 +55,12 @@ class ProjectCardSearchService:
 
         if backend in ("db", "graph"):
             index_service = ProjectIndexService(backend="db")
-            cards = index_service.get_cards(query=query, org_codes=[org_code] if org_code else None)
-            total = len(cards)
-
-            start = max(page - 1, 0) * page_size
-            end = start + page_size
-            return cards[start:end], total
+            return index_service.get_cards_page(
+                query=query,
+                org_codes=[org_code] if org_code else None,
+                page=page,
+                page_size=page_size,
+            )
 
         project_uris = self._search_project_uris(query, org_code=org_code)
         total = len(project_uris)

@@ -18,8 +18,10 @@ services:
     restart: unless-stopped
     user: "${UID:-1000}:${GID:-1000}"
     depends_on:
-      - postgres
-      - minio
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     volumes:
       - .:/app:z
       - ../arkumu-metadata:/arkumu-metadata:z
@@ -32,6 +34,7 @@ services:
     environment:
       # DISABLE_CACHE: 1 = cache disabled (no caching), 0 = cache enabled (with caching)
       - DISABLE_CACHE=0
+      - WAIT_FOR_IT_TIMEOUT=${WAIT_FOR_IT_TIMEOUT:-90}
       - OAI_S3_ROSETTA_BASE_FUK=/rosetta/fudk/sandbox/input/arkumu/daten
       - OAI_S3_ROSETTA_BASE_RSH=/rosetta/rsh/sandbox/input/arkumu/daten
       - OAI_S3_ROSETTA_BASE_DET=/rosetta/hfmdt/sandbox/input/arkumu/daten
@@ -54,6 +57,12 @@ services:
       - arkumu_local_postgres_data_backups:/backups
     env_file:
       - ./.envs/.local/.postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -h 127.0.0.1 -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     # No ports exposed - only accessible internally
     ports:
       - "127.0.0.1:8432:5432"
@@ -112,8 +121,12 @@ services:
     container_name: arkumu_local_huey
     user: "${UID:-1000}:${GID:-1000}"
     depends_on:
-      - django
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_healthy
     volumes:
       - .:/app:z
       - ../arkumu-metadata:/arkumu-metadata:z
@@ -121,6 +134,7 @@ services:
       - ./.envs/.local/.django
       - ./.envs/.local/.postgres
     environment:
+      WAIT_FOR_IT_TIMEOUT: ${WAIT_FOR_IT_TIMEOUT:-90}
       OAI_S3_ROSETTA_BASE_FUK: /rosetta/fudk/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_RSH: /rosetta/rsh/sandbox/input/arkumu/daten
       OAI_S3_ROSETTA_BASE_DET: /rosetta/hfmdt/sandbox/input/arkumu/daten

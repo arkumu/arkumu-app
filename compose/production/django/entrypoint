@@ -4,14 +4,27 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+# Docker generates /etc/resolv.conf at runtime with 640 permissions on some
+# hosts (notably Debian Trixie-based images).  The non-root user needs to read
+# it for DNS resolution, so widen permissions while we still run as root.
+if [ "$(id -u)" = "0" ] && [ -f /etc/resolv.conf ]; then
+    chmod a+r /etc/resolv.conf
+fi
+
 if [ -z "${POSTGRES_USER}" ]; then
     base_postgres_image_default_user='postgres'
     export POSTGRES_USER="${base_postgres_image_default_user}"
 fi
 export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
 
-wait-for-it "${POSTGRES_HOST}:${POSTGRES_PORT}" -t 30
+WAIT_FOR_IT_TIMEOUT="${WAIT_FOR_IT_TIMEOUT:-90}"
+
+wait-for-it "${POSTGRES_HOST}:${POSTGRES_PORT}" -t "${WAIT_FOR_IT_TIMEOUT}"
 
 >&2 echo 'PostgreSQL is available'
 
+# Drop from root to the application user
+if [ "$(id -u)" = "0" ]; then
+    exec gosu django "$@"
+fi
 exec "$@"
