@@ -646,6 +646,95 @@ def _build_project_access_context(
     return context
 
 
+def _preferred_display_property_uri(
+    service: SchemaWorkspaceService,
+    target_dataset: Optional[str],
+) -> Optional[str]:
+    if not target_dataset:
+        return None
+
+    try:
+        target_schema = service.get_dataset_schema(target_dataset)
+    except ValueError:
+        return None
+
+    properties = target_schema.get("properties", {}) or {}
+    preferred_tokens = (
+        "name",
+        "titel",
+        "title",
+        "label",
+        "bezeichnung",
+        "beschreibung",
+    )
+
+    for column, prop in properties.items():
+        column_key = str(column or "").lower()
+        label_key = str(getattr(prop, "name", "") or column).lower()
+        if any(token in column_key or token in label_key for token in preferred_tokens):
+            uri = getattr(prop, "uri", None)
+            if uri:
+                return str(uri)
+
+    return None
+
+
+def _dataset_table_column_specs(
+    service: SchemaWorkspaceService,
+    dataset_name: str,
+) -> List[Dict[str, Optional[str]]]:
+    schema = service.get_dataset_schema(dataset_name)
+    properties = schema.get("properties", {}) or {}
+    field_metadata = service.get_field_metadata(dataset_name)
+
+    def _build_specs(*, include_anchors: bool) -> List[Dict[str, Optional[str]]]:
+        specs: List[Dict[str, Optional[str]]] = []
+        for col_name, meta in field_metadata.items():
+            if not include_anchors and meta.get("is_anchor"):
+                continue
+
+            prop_uri = meta.get("property_uri")
+            if not prop_uri:
+                continue
+            prop_resource = properties.get(col_name)
+
+            fk_info = meta.get("fk_relationship") or {}
+            target_dataset = fk_info.get("target_dataset")
+            display_property_uri = (
+                _preferred_display_property_uri(service, target_dataset)
+                if fk_info and not meta.get("is_multi_value")
+                else None
+            )
+            display_property_id = None
+            if display_property_uri and target_dataset:
+                try:
+                    target_schema = service.get_dataset_schema(target_dataset)
+                except ValueError:
+                    target_schema = None
+                if target_schema:
+                    for target_property in (target_schema.get("properties", {}) or {}).values():
+                        if getattr(target_property, "uri", None) == display_property_uri:
+                            display_property_id = getattr(target_property, "id", None)
+                            break
+            specs.append(
+                {
+                    "field_name": col_name,
+                    "label": str(meta.get("property_label") or meta.get("column_name") or col_name),
+                    "property_uri": str(prop_uri),
+                    "property_id": getattr(prop_resource, "id", None),
+                    "target_dataset": target_dataset,
+                    "display_property_uri": display_property_uri,
+                    "display_property_id": display_property_id,
+                }
+            )
+        return specs
+
+    column_specs = _build_specs(include_anchors=False)
+    if column_specs:
+        return column_specs
+    return _build_specs(include_anchors=True)
+
+
 def _render_dataset_panel(
     request: HttpRequest,
     *,
@@ -763,12 +852,13 @@ def _render_dataset_panel(
 
         # Auto-select best display property for single FK fields
         if fk_info and not meta.get("is_multi_value"):
-            preferred_names = ["name", "titel", "title", "label", "bezeichnung", "beschreibung"]
-            meta["display_property"] = None
-            for prop in target_property_cache[target_dataset]:
-                    prop_name_lower = prop.get("column", "").lower()
-                    if any(pref in prop_name_lower for pref in preferred_names):
-                        meta["display_property"] = prop.get("uri")
+            meta["display_property"] = _preferred_display_property_uri(
+                service,
+                target_dataset,
+            )
+            if meta["display_property"]:
+                for prop in target_property_cache[target_dataset]:
+                    if prop.get("uri") == meta["display_property"]:
                         meta["display_property_label"] = prop.get("label")
                         break
 
@@ -3930,6 +4020,7 @@ class DatasetTableView(LoginRequiredMixin, View):
 
         service = _get_schema_service(request, mapping_id)
         search_query = request.GET.get("q", "").strip()
+        selected_property = (request.GET.get("property") or "").strip()
         page = int(request.GET.get("page", 1))
         per_page = 50
 
@@ -3945,65 +4036,150 @@ class DatasetTableView(LoginRequiredMixin, View):
                 "search_url": "", "total_count": 0, "has_more": False,
             })
 
-        # Get field metadata to determine columns
-        field_metadata = service.get_field_metadata(dataset_name)
-        columns = []
-        col_uris = []
-        for col_name, meta in field_metadata.items():
-            prop_uri = meta.get("property_uri")
-            if not prop_uri:
-                continue
-            label = str(meta.get("property_label") or meta.get("column_name") or col_name)
-            columns.append(label)
-            col_uris.append(str(prop_uri))
-            if len(columns) >= 5:
-                break
+        # Mirror the visible form field ordering in the table.
+        column_specs = _dataset_table_column_specs(service, dataset_name)
+        columns = [spec["label"] or "" for spec in column_specs]
+        predicate_ids = [spec["property_id"] for spec in column_specs if spec.get("property_id")]
+        column_specs_by_predicate_id = {
+            spec["property_id"]: spec
+            for spec in column_specs
+            if spec.get("property_id")
+        }
+        search_properties = [
+            {
+                "uri": spec["property_uri"] or "",
+                "label": spec["label"] or spec["field_name"] or "",
+            }
+            for spec in column_specs
+            if spec.get("property_uri")
+        ]
+        dataset_display_property_uri = _preferred_display_property_uri(service, dataset_name)
+        selected_property_spec = next(
+            (spec for spec in column_specs if spec.get("property_uri") == selected_property),
+            None,
+        )
 
         # Get entity URIs in this dataset
         is_part_of_uri = "http://purl.org/dc/terms/isPartOf"
-        entity_uris_qs = Triple.objects.filter(
-            predicate__uri=is_part_of_uri,
-            object=dataset_resource,
-        ).values_list("subject__uri", flat=True)
+        is_part_of_property = Resource.objects.filter(uri=is_part_of_uri).only("id").first()
+        if not is_part_of_property:
+            return render(request, "metadata/entity_creation/partials/_dataset_table.html", {
+                "rows": [], "columns": columns, "search_query": search_query,
+                "search_properties": search_properties, "selected_property": selected_property,
+                "search_url": "", "total_count": 0, "has_more": False, "current_page": 1,
+                "total_pages": 1, "has_previous": False, "next_page_url": "",
+                "previous_page_url": "", "first_page_url": "", "last_page_url": "",
+            })
 
-        if search_query:
+        entity_membership_qs = Triple.objects.filter(
+            predicate_id=is_part_of_property.id,
+            object_id=dataset_resource.id,
+        )
+
+        if search_query and predicate_ids:
             from django.db.models import Q
-            entity_uris_qs = entity_uris_qs.filter(
-                Q(subject__name__icontains=search_query)
-                | Q(subject__subject_triples__object__resource_type=ResourceType.LITERAL,
-                    subject__subject_triples__object__value__icontains=search_query)
+
+            active_specs = [selected_property_spec] if selected_property_spec else column_specs
+            active_predicate_ids = [
+                spec["property_id"] for spec in active_specs if spec and spec.get("property_id")
+            ]
+            active_display_property_ids = [
+                spec["display_property_id"] for spec in active_specs if spec and spec.get("display_property_id")
+            ]
+
+            searchable_triples = Triple.objects.filter(
+                subject_id__in=entity_membership_qs.values_list("subject_id", flat=True),
+            )
+            if active_predicate_ids:
+                searchable_triples = searchable_triples.filter(predicate_id__in=active_predicate_ids)
+
+            matching_subject_uris = searchable_triples.filter(
+                Q(object__resource_type=ResourceType.LITERAL, object__value__icontains=search_query)
+                | Q(object__resource_type=ResourceType.LITERAL, object__name__icontains=search_query)
+                | Q(object__resource_type=ResourceType.ENTITY, object__name__icontains=search_query)
+                | Q(
+                    object__resource_type=ResourceType.ENTITY,
+                    object__subject_triples__predicate_id__in=active_display_property_ids,
+                    object__subject_triples__object__resource_type=ResourceType.LITERAL,
+                    object__subject_triples__object__value__icontains=search_query,
+                )
+            ).values_list("subject_id", flat=True)
+
+            entity_membership_qs = entity_membership_qs.filter(
+                subject_id__in=matching_subject_uris,
             ).distinct()
 
-        total_count = entity_uris_qs.count()
-        start = (page - 1) * per_page
-        entity_uris = list(entity_uris_qs[start:start + per_page])
+        entity_membership_qs = entity_membership_qs.order_by("subject_id")
 
-        # Batch-load literal values for these entities
-        if entity_uris and col_uris:
+        total_count = entity_membership_qs.count()
+        total_pages = max(1, (total_count + per_page - 1) // per_page) if total_count else 1
+        page = max(1, min(page, total_pages))
+        start = (page - 1) * per_page
+        entity_rows = list(
+            entity_membership_qs.values_list("subject_id", "subject__uri")[start:start + per_page]
+        )
+        entity_ids = [subject_id for subject_id, _ in entity_rows]
+        entity_uri_by_id = {subject_id: subject_uri for subject_id, subject_uri in entity_rows}
+
+        # Batch-load field values for these entities, resolving referenced entity
+        # labels so FK columns match the form semantics.
+        if entity_ids and predicate_ids:
             value_triples = (
                 Triple.objects.filter(
-                    subject__uri__in=entity_uris,
-                    predicate__uri__in=col_uris,
-                    object__resource_type=ResourceType.LITERAL,
+                    subject_id__in=entity_ids,
+                    predicate_id__in=predicate_ids,
                 )
                 .select_related("subject", "predicate", "object")
             )
-            # Build lookup: {entity_uri: {predicate_uri: value}}
-            value_map: Dict[str, Dict[str, str]] = {}
+            value_map: Dict[int, Dict[int, List[str]]] = {}
+            label_cache: Dict[Tuple[str, Optional[str], Optional[str]], str] = {}
             for t in value_triples:
-                entity_vals = value_map.setdefault(t.subject.uri, {})
-                if t.predicate.uri not in entity_vals:
-                    entity_vals[t.predicate.uri] = t.object.value or t.object.name or ""
+                entity_vals = value_map.setdefault(t.subject_id, {})
+                cell_values = entity_vals.setdefault(t.predicate_id, [])
+
+                resolved_value = ""
+                if t.object.resource_type == ResourceType.LITERAL:
+                    resolved_value = t.object.value or t.object.name or ""
+                else:
+                    spec = column_specs_by_predicate_id.get(t.predicate_id, {})
+                    target_dataset = spec.get("target_dataset")
+                    display_property_uri = spec.get("display_property_uri")
+                    object_uri = t.object.uri or ""
+                    cache_key = (object_uri, target_dataset, display_property_uri)
+                    if object_uri and cache_key not in label_cache:
+                        label_cache[cache_key] = str(
+                            _infer_entity_label(
+                                service,
+                                object_uri,
+                                target_dataset,
+                                display_property_uri=display_property_uri,
+                            )
+                            or t.object.name
+                            or object_uri
+                        )
+                    resolved_value = label_cache.get(cache_key, "")
+
+                resolved_value = str(resolved_value or "").strip()
+                if resolved_value and resolved_value not in cell_values:
+                    cell_values.append(resolved_value)
         else:
             value_map = {}
 
         # Build table rows
         dataset_endpoint = reverse("metadata:entity_workspace_dataset", args=[service.mapping.id])
         rows = []
-        for idx, uri in enumerate(entity_uris, start=start + 1):
-            vals = value_map.get(uri, {})
-            cells = [vals.get(col_uri, "") for col_uri in col_uris]
-            entity_label = next((c for c in cells if c), uri.rsplit("/", 1)[-1])
+        for idx, subject_id in enumerate(entity_ids, start=start + 1):
+            uri = entity_uri_by_id.get(subject_id, "")
+            vals = value_map.get(subject_id, {})
+            cells = ["; ".join(vals.get(predicate_id, [])) for predicate_id in predicate_ids]
+            entity_label = _infer_entity_label(
+                service,
+                uri,
+                dataset_name,
+                display_property_uri=dataset_display_property_uri,
+            )
+            if not entity_label:
+                entity_label = next((c for c in cells if c), uri.rsplit("/", 1)[-1])
             params = urlencode({"dataset": dataset_name, "mode": "load", "entity_uri": uri, "entity_label": entity_label})
             rows.append({
                 "index": idx,
@@ -4014,19 +4190,34 @@ class DatasetTableView(LoginRequiredMixin, View):
         base_params = {"dataset": dataset_name}
         if search_query:
             base_params["q"] = search_query
+        if selected_property:
+            base_params["property"] = selected_property
         search_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode({"dataset": dataset_name})
 
+        first_page_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode(dict(base_params, page=1))
+        previous_page_url = ""
+        if page > 1:
+            previous_page_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode(dict(base_params, page=page - 1))
         next_page_params = dict(base_params, page=page + 1)
         next_page_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode(next_page_params)
+        last_page_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode(dict(base_params, page=total_pages))
 
         return render(request, "metadata/entity_creation/partials/_dataset_table.html", {
             "rows": rows,
             "columns": columns,
             "search_query": search_query,
+            "search_properties": search_properties,
+            "selected_property": selected_property,
             "search_url": search_url,
             "total_count": total_count,
             "has_more": (start + per_page) < total_count,
+            "current_page": page,
+            "total_pages": total_pages,
+            "has_previous": page > 1,
             "next_page_url": next_page_url,
+            "previous_page_url": previous_page_url,
+            "first_page_url": first_page_url,
+            "last_page_url": last_page_url,
         })
 
 

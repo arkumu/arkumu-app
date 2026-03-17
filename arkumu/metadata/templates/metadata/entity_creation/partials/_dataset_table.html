@@ -5,17 +5,36 @@
 {% endif %}
 
 <div class="mb-3">
-  <input type="search"
-         name="q"
-         value="{{ search_query }}"
-         placeholder="Suchen..."
-         class="input input-bordered input-sm w-full max-w-xs"
-         hx-get="{{ search_url }}"
-         hx-trigger="input changed delay:300ms"
-         hx-target="#dataset-panel"
-         hx-swap="innerHTML"
-         hx-include="this"
-         autocomplete="off">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+    {% if search_properties %}
+    <select id="table-search-property"
+            name="property"
+            class="select select-bordered select-sm w-full sm:max-w-xs"
+            hx-get="{{ search_url }}"
+            hx-trigger="change"
+            hx-target="#dataset-panel"
+            hx-swap="innerHTML"
+            hx-include="#table-search-input">
+      <option value="" {% if not selected_property %}selected{% endif %}>Alle Felder</option>
+      {% for prop in search_properties %}
+      <option value="{{ prop.uri }}" {% if prop.uri == selected_property %}selected{% endif %}>{{ prop.label }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+
+    <input type="search"
+           id="table-search-input"
+           name="q"
+           value="{{ search_query }}"
+           placeholder="Suchen..."
+           class="input input-bordered input-sm w-full max-w-xs"
+           hx-get="{{ search_url }}"
+           hx-trigger="input changed delay:300ms"
+           hx-target="#dataset-panel"
+           hx-swap="innerHTML"
+           hx-include="#table-search-property, this"
+           autocomplete="off">
+  </div>
 </div>
 
 {% if rows %}
@@ -45,15 +64,53 @@
   </table>
 </div>
 
-{% if has_more %}
-<div class="mt-2 text-center">
-  <button type="button"
-          class="btn btn-ghost btn-sm"
-          hx-get="{{ next_page_url }}"
-          hx-target="#dataset-panel"
-          hx-swap="innerHTML">
-    Mehr laden ({{ total_count }} gesamt)
-  </button>
+{% if total_pages > 1 %}
+<div class="flex justify-center mt-4">
+  <div class="join">
+    {% if has_previous %}
+    <button type="button"
+            class="join-item btn btn-sm"
+            hx-get="{{ first_page_url }}"
+            hx-target="#dataset-panel"
+            hx-swap="innerHTML">
+      «
+    </button>
+    <button type="button"
+            class="join-item btn btn-sm"
+            hx-get="{{ previous_page_url }}"
+            hx-target="#dataset-panel"
+            hx-swap="innerHTML">
+      ‹
+    </button>
+    {% else %}
+    <button type="button" class="join-item btn btn-sm btn-disabled">«</button>
+    <button type="button" class="join-item btn btn-sm btn-disabled">‹</button>
+    {% endif %}
+
+    <button type="button" class="join-item btn btn-sm btn-active">
+      Seite {{ current_page }} von {{ total_pages }}
+    </button>
+
+    {% if has_more %}
+    <button type="button"
+            class="join-item btn btn-sm"
+            hx-get="{{ next_page_url }}"
+            hx-target="#dataset-panel"
+            hx-swap="innerHTML">
+      ›
+    </button>
+    <button type="button"
+            class="join-item btn btn-sm"
+            hx-get="{{ last_page_url }}"
+            hx-target="#dataset-panel"
+            hx-swap="innerHTML">
+      »
+    </button>
+    {% else %}
+    <button type="button" class="join-item btn btn-sm btn-disabled">›</button>
+    <button type="button" class="join-item btn btn-sm btn-disabled">»</button>
+    {% endif %}
+  </div>
 </div>
 {% endif %}
 

@@ -448,6 +448,21 @@ def _load_dataset(client, mapping, dataset, params, hx=True):
     )
 
 
+def _get_dataset_table(client, mapping, dataset, params=None, hx=True):
+    url = reverse("metadata:entity_workspace_table", args=[mapping.id])
+    headers = {}
+    if hx:
+        headers["HTTP_HX_REQUEST"] = "true"
+    return client.get(
+        url,
+        {
+            "dataset": dataset,
+            **(params or {}),
+        },
+        **headers,
+    )
+
+
 def _entity_uri(organization: Organization, dataset: str, identifier: str) -> str:
     org_slug = slugify_uri_part(str(organization.code))
     dataset_slug = slugify_uri_part(dataset)
@@ -497,6 +512,229 @@ def test_project_creation_persists_literals(client, user, mapping, organization,
     )
     assert reload_response.status_code == 200
     assert "Projekt Alpha" in reload_response.content.decode()
+
+
+def test_dataset_table_uses_all_visible_fields_in_form_order(
+    client,
+    user,
+    mapping,
+    organization,
+    workspace_service,
+):
+    client.force_login(user)
+
+    project_uri = _entity_uri(organization, "Projekt", "P-001")
+    object_uri = _entity_uri(organization, "Digitales Objekt", "O-001")
+
+    assert _post_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "projekt_id": "P-001",
+            "titel": "Projekt Alpha",
+        },
+    ).status_code == 200
+    assert _post_dataset(
+        client,
+        mapping,
+        "Digitales Objekt",
+        {
+            "objekt_id": "O-001",
+            "titel": "Objekt Beta",
+        },
+    ).status_code == 200
+    assert _post_dataset(
+        client,
+        mapping,
+        "Ereignis",
+        {
+            "ereignis_id": "E-001",
+            "bezeichnung": "Premiere",
+            "projekt_fk": project_uri,
+            "digital_object_fk": object_uri,
+            "rolle": "Screening",
+        },
+    ).status_code == 200
+
+    response = _get_dataset_table(client, mapping, "Ereignis")
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "Ereignis-ID" not in html
+
+    bezeichnung_pos = html.index("<th>Bezeichnung</th>")
+    digital_pos = html.index("<th>Digitales Objekt</th>")
+    projekt_pos = html.index("<th>Projekt</th>")
+    rolle_pos = html.index("<th>Rolle</th>")
+
+    assert bezeichnung_pos < digital_pos < projekt_pos < rolle_pos
+
+
+def test_dataset_table_resolves_fk_values_to_labels(
+    client,
+    user,
+    mapping,
+    organization,
+    workspace_service,
+):
+    client.force_login(user)
+
+    project_uri = _entity_uri(organization, "Projekt", "P-020")
+    object_uri = _entity_uri(organization, "Digitales Objekt", "O-020")
+
+    assert _post_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "projekt_id": "P-020",
+            "titel": "Projekt Table Label",
+        },
+    ).status_code == 200
+    assert _post_dataset(
+        client,
+        mapping,
+        "Digitales Objekt",
+        {
+            "objekt_id": "O-020",
+            "titel": "Objekt Table Label",
+        },
+    ).status_code == 200
+    assert _post_dataset(
+        client,
+        mapping,
+        "Ereignis",
+        {
+            "ereignis_id": "E-020",
+            "bezeichnung": "Event With Links",
+            "projekt_fk": project_uri,
+            "digital_object_fk": object_uri,
+        },
+    ).status_code == 200
+
+    response = _get_dataset_table(client, mapping, "Ereignis")
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "Projekt Table Label" in html
+    assert "Objekt Table Label" in html
+    assert project_uri not in html
+    assert object_uri not in html
+
+
+def test_dataset_table_uses_explicit_pagination_controls(
+    client,
+    user,
+    mapping,
+    organization,
+    workspace_service,
+):
+    client.force_login(user)
+    service = SchemaWorkspaceService(
+        mapping=mapping,
+        organization=organization,
+        base_uri="http://arkumu.org/data",
+    )
+
+    for index in range(1, 53):
+        service.save_entity(
+            "Projekt",
+            {
+                "projekt_id": f"P-{index:03d}",
+                "titel": f"Projekt {index:03d}",
+            },
+        )
+
+    response = _get_dataset_table(client, mapping, "Projekt")
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "Mehr laden" not in html
+    assert "Seite 1 von 2" in html
+    assert "page=2" in html
+
+
+def test_dataset_table_search_can_be_scoped_to_a_field(
+    client,
+    user,
+    mapping,
+    organization,
+    workspace_service,
+):
+    client.force_login(user)
+
+    project_uri = _entity_uri(organization, "Projekt", "P-101")
+    object_uri = _entity_uri(organization, "Digitales Objekt", "O-101")
+
+    assert _post_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "projekt_id": "P-101",
+            "titel": "Search Host Project",
+        },
+    ).status_code == 200
+    assert _post_dataset(
+        client,
+        mapping,
+        "Digitales Objekt",
+        {
+            "objekt_id": "O-101",
+            "titel": "Search Host Object",
+        },
+    ).status_code == 200
+
+    assert _post_dataset(
+        client,
+        mapping,
+        "Ereignis",
+        {
+            "ereignis_id": "E-101",
+            "bezeichnung": "Alpha Event",
+            "projekt_fk": project_uri,
+            "digital_object_fk": object_uri,
+            "rolle": "Screening",
+        },
+    ).status_code == 200
+    assert _post_dataset(
+        client,
+        mapping,
+        "Ereignis",
+        {
+            "ereignis_id": "E-102",
+            "bezeichnung": "Beta Event",
+            "projekt_fk": project_uri,
+            "digital_object_fk": object_uri,
+            "rolle": "Alpha Role",
+        },
+    ).status_code == 200
+
+    role_property_uri = workspace_service.datasets["Ereignis"]["properties"]["rolle"].uri
+    title_property_uri = workspace_service.datasets["Ereignis"]["properties"]["bezeichnung"].uri
+
+    role_response = _get_dataset_table(
+        client,
+        mapping,
+        "Ereignis",
+        {"q": "Alpha", "property": role_property_uri},
+    )
+    assert role_response.status_code == 200
+    role_html = role_response.content.decode()
+    assert "Alpha Role" in role_html
+    assert "Alpha Event" not in role_html
+
+    title_response = _get_dataset_table(
+        client,
+        mapping,
+        "Ereignis",
+        {"q": "Alpha", "property": title_property_uri},
+    )
+    assert title_response.status_code == 200
+    title_html = title_response.content.decode()
+    assert "Alpha Event" in title_html
+    assert "Alpha Role" not in title_html
 
 
 def test_project_external_reference_uses_identifier_placeholder(
