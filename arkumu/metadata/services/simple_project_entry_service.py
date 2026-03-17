@@ -15,6 +15,7 @@ from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.resources import EntityResource
 from arkumu.metadata.models.triples import Triple
+from arkumu.storage.models.s3_file_objects import S3FileObject
 
 if TYPE_CHECKING:
     from arkumu.users.models import Organization
@@ -231,7 +232,6 @@ class SimpleProjectEntryService:
             _CANONICAL["projekt_type"], _CANONICAL["digitales_objekt_link"]
         )
         if not do_link_uri:
-            # Fallback to org-specific pattern
             do_link_uri = f"http://arkumu.org/data/{self.organization.code}/properties/digitales-objekt"
         pred = _ensure_predicate(do_link_uri, "Digitales Objekt")
         Triple.objects.get_or_create(
@@ -241,6 +241,17 @@ class SimpleProjectEntryService:
             source=self.organization,
             defaults={"is_derived": False},
         )
+
+        # Link S3FileObject to the digital object Resource
+        s3_file = S3FileObject.objects.filter(
+            s3_key=s3_key,
+            organization=self.organization.code,
+        ).first()
+        if s3_file:
+            s3_file.related_resource = do_entity._resource
+            s3_file.save(update_fields=["related_resource"])
+        else:
+            logger.warning("S3FileObject not found for key=%s org=%s", s3_key, self.organization.code)
 
         return do_entity
 

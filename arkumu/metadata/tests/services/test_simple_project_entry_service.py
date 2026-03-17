@@ -4,6 +4,8 @@ from arkumu.metadata.services.simple_project_entry_service import SimpleProjectE
 from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
+from arkumu.storage.models.s3_file_objects import S3FileObject
+from arkumu.storage.models.upload_sessions import UploadSession
 from arkumu.users.models import Organization
 
 
@@ -190,3 +192,66 @@ class TestSimpleProjectEntryService:
             subject=do_entity._resource,
             predicate__uri="http://purl.org/dc/terms/isPartOf",
         ).exists()
+
+    def test_digital_object_links_s3_file_object(self):
+        org = self._make_org()
+        s3_key = "testorg/20260317/test.pdf"
+
+        # Create an S3FileObject as the upload flow would
+        user = org.users.create(username="uploader", password="test")
+        session = UploadSession.objects.create(
+            user=user,
+            status="completed",
+        )
+        s3_file = S3FileObject.objects.create(
+            file_name="test.pdf",
+            s3_key=s3_key,
+            organization=org.code,
+            session=session,
+            status="completed",
+        )
+        assert s3_file.related_resource is None
+
+        service = SimpleProjectEntryService(organization=org)
+        project = service.create_project(title="Project with S3 link")
+        do_entity = service.create_digital_object(
+            project=project,
+            s3_key=s3_key,
+            file_name="test.pdf",
+            content_type="application/pdf",
+            file_size=1024,
+        )
+
+        s3_file.refresh_from_db()
+        assert s3_file.related_resource == do_entity._resource
+
+    def test_digital_object_s3_link_scoped_to_org(self):
+        """S3FileObject from another org must not be linked."""
+        org = self._make_org()
+        other_org = Organization.objects.create(code="otherorg", name="Other Org")
+        s3_key = "shared/key/file.pdf"
+
+        user = org.users.create(username="uploader2", password="test")
+        session = UploadSession.objects.create(user=user, status="completed")
+
+        # S3FileObject belongs to other org
+        s3_file = S3FileObject.objects.create(
+            file_name="file.pdf",
+            s3_key=s3_key,
+            organization=other_org.code,
+            session=session,
+            status="completed",
+        )
+
+        service = SimpleProjectEntryService(organization=org)
+        project = service.create_project(title="Project wrong org")
+        do_entity = service.create_digital_object(
+            project=project,
+            s3_key=s3_key,
+            file_name="file.pdf",
+            content_type="application/pdf",
+            file_size=512,
+        )
+
+        s3_file.refresh_from_db()
+        assert s3_file.related_resource is None  # Must NOT be linked
