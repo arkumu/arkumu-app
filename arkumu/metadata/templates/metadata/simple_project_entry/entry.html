@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Neues Projekt{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto py-8 px-4">
+  <h1 class="text-2xl font-bold mb-6">Neues Projekt erstellen</h1>
+
+  <form method="post" id="project-entry-form">
+    {% csrf_token %}
+
+    {# Section 1: Projekt #}
+    <div class="card bg-base-100 shadow mb-6">
+      <div class="card-body">
+        <h2 class="card-title text-lg">Projekt</h2>
+
+        <div class="form-control w-full mb-4">
+          <label class="label" for="titel">
+            <span class="label-text">Titel <span class="text-error">*</span></span>
+          </label>
+          <input type="text" id="titel" name="titel"
+                 class="input input-bordered w-full"
+                 required
+                 placeholder="Projekttitel eingeben">
+        </div>
+
+        <div class="form-control w-full">
+          <label class="label" for="projektart_uri">
+            <span class="label-text">Projektart</span>
+          </label>
+          <select id="projektart_uri" name="projektart_uri"
+                  class="select select-bordered w-full">
+            <option value="">— Projektart wählen —</option>
+            {% for uri, label in projektart_choices %}
+            <option value="{{ uri }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    {# Section 2: Verknüpfungen #}
+    <div class="card bg-base-100 shadow mb-6">
+      <div class="card-body">
+        <h2 class="card-title text-lg">Verknüpfungen</h2>
+
+        {# Ereignis search #}
+        <div class="form-control w-full mb-4">
+          <label class="label">
+            <span class="label-text">Ereignis</span>
+          </label>
+          <div class="relative">
+            <input type="search"
+                   name="q"
+                   placeholder="Ereignis suchen..."
+                   class="input input-bordered w-full"
+                   hx-get="{% url 'metadata:simple_project_entry_search' dataset_name='Ereignis' %}"
+                   hx-trigger="input changed delay:250ms"
+                   hx-target="#ereignis-results"
+                   hx-swap="innerHTML"
+                   autocomplete="off">
+            <div id="ereignis-results" class="relative"></div>
+          </div>
+          <div id="ereignis-selected" class="flex flex-wrap gap-2 mt-2"></div>
+        </div>
+
+        {# Akteure search #}
+        <div class="form-control w-full">
+          <label class="label">
+            <span class="label-text">Akteure</span>
+          </label>
+          <div class="relative">
+            <input type="search"
+                   name="q"
+                   placeholder="Akteur suchen..."
+                   class="input input-bordered w-full"
+                   hx-get="{% url 'metadata:simple_project_entry_search' dataset_name='Akteurin' %}"
+                   hx-trigger="input changed delay:250ms"
+                   hx-target="#akteure-results"
+                   hx-swap="innerHTML"
+                   autocomplete="off">
+            <div id="akteure-results" class="relative"></div>
+          </div>
+          <div id="akteure-selected" class="flex flex-wrap gap-2 mt-2"></div>
+        </div>
+      </div>
+    </div>
+
+    {# Section 3: Digitales Objekt #}
+    <div class="card bg-base-100 shadow mb-6">
+      <div class="card-body">
+        <h2 class="card-title text-lg">Digitales Objekt</h2>
+        <div class="form-control w-full">
+          <label class="label">
+            <span class="label-text">Datei hochladen</span>
+          </label>
+          <input type="file" id="file-input"
+                 class="file-input file-input-bordered w-full">
+          <div id="upload-progress" class="mt-2 hidden">
+            <progress class="progress progress-primary w-full" value="0" max="100"></progress>
+            <span id="upload-status" class="text-sm"></span>
+          </div>
+          <div id="upload-result" class="mt-2"></div>
+        </div>
+      </div>
+    </div>
+
+    {# Submit #}
+    <div class="flex justify-end">
+      <button type="submit" class="btn btn-primary">Speichern</button>
+    </div>
+  </form>
+</div>
+
+<script>
+function addSelectedEntity(datasetName, uri, name) {
+  const fieldName = datasetName === 'Ereignis' ? 'ereignis_uris' : 'akteure_uris';
+  const containerId = datasetName === 'Ereignis' ? 'ereignis-selected' : 'akteure-selected';
+  const container = document.getElementById(containerId);
+
+  // Prevent duplicates
+  if (container.querySelector(`input[value="${uri}"]`)) return;
+
+  const tag = document.createElement('span');
+  tag.className = 'badge badge-lg gap-1';
+  tag.innerHTML = `
+    ${name}
+    <input type="hidden" name="${fieldName}" value="${uri}">
+    <button type="button" class="btn btn-ghost btn-xs" onclick="this.parentElement.remove()">&times;</button>
+  `;
+  container.appendChild(tag);
+
+  // Clear search results
+  const resultsId = datasetName === 'Ereignis' ? 'ereignis-results' : 'akteure-results';
+  document.getElementById(resultsId).innerHTML = '';
+}
+</script>
+{% endblock %}
