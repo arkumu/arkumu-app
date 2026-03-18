@@ -6,6 +6,54 @@
 
 <div class="mb-3">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+    {% if table_column_options %}
+    <form class="w-full sm:max-w-sm"
+          hx-push-url="false"
+          hx-post="{{ table_preference_url }}"
+          hx-trigger="submit"
+          hx-target="#dataset-panel"
+          hx-swap="innerHTML">
+      <input type="hidden" name="dataset" value="{{ dataset_name }}">
+      {% if search_query %}
+      <input type="hidden" name="q" value="{{ search_query }}">
+      {% endif %}
+      {% if selected_property %}
+      <input type="hidden" name="property" value="{{ selected_property }}">
+      {% endif %}
+      <input type="hidden" name="page" value="{{ current_page }}">
+      <details class="dropdown w-full">
+        <summary class="btn btn-sm btn-outline w-full justify-between">
+          Spalten auswählen
+        </summary>
+        <div class="dropdown-content z-[1] mt-2 w-80 rounded-box border border-base-300 bg-base-100 p-3 shadow">
+          <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-base-content/60">
+            Sichtbare Spalten
+          </div>
+          <div class="max-h-64 space-y-2 overflow-y-auto pr-1">
+            {% for option in table_column_options %}
+            <label class="label cursor-pointer justify-start gap-3 py-0">
+              <input type="checkbox"
+                     name="columns"
+                     value="{{ option.uri }}"
+                     class="checkbox checkbox-sm"
+                     {% if option.uri in configured_table_column_uris %}checked{% endif %}>
+              <span class="label-text">{{ option.label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <div class="mt-3 flex justify-end gap-2">
+            <button type="submit" class="btn btn-sm btn-ghost" name="reset_columns" value="1">
+              Alle Spalten
+            </button>
+            <button type="submit" class="btn btn-sm btn-primary">
+              Anwenden
+            </button>
+          </div>
+        </div>
+      </details>
+    </form>
+    {% endif %}
+
     {% if search_properties %}
     <select id="table-search-property"
             name="property"

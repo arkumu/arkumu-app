@@ -465,6 +465,14 @@ def _get_dataset_table(client, mapping, dataset, params=None, hx=True):
     )
 
 
+def _post_dataset_table_preference(client, mapping, payload, hx=True):
+    url = reverse("metadata:entity_workspace_table_preference", args=[mapping.id])
+    headers = {}
+    if hx:
+        headers["HTTP_HX_REQUEST"] = "true"
+    return client.post(url, payload, **headers)
+
+
 def _entity_uri(organization: Organization, dataset: str, identifier: str) -> str:
     org_slug = slugify_uri_part(str(organization.code))
     dataset_slug = slugify_uri_part(dataset)
@@ -563,7 +571,7 @@ def test_dataset_table_uses_all_visible_fields_in_form_order(
 
     assert response.status_code == 200
     html = response.content.decode()
-    assert "Ereignis-ID" not in html
+    assert "<th>Ereignis-ID</th>" not in html
 
     bezeichnung_pos = html.index("<th>Bezeichnung</th>")
     digital_pos = html.index("<th>Digitales Objekt</th>")
@@ -623,6 +631,124 @@ def test_dataset_table_resolves_fk_values_to_labels(
     assert "Objekt Table Label" in html
     assert project_uri not in html
     assert object_uri not in html
+
+
+def test_dataset_table_preference_persists_and_can_reset(
+    client,
+    user,
+    mapping,
+    workspace_service,
+):
+    client.force_login(user)
+    role_property_uri = workspace_service.datasets["Ereignis"]["properties"]["rolle"].uri
+    project_property_uri = workspace_service.datasets["Ereignis"]["properties"]["projekt_fk"].uri
+
+    response = _post_dataset_table_preference(
+        client,
+        mapping,
+        {
+            "dataset": "Ereignis",
+            "columns": [role_property_uri, project_property_uri],
+            "q": "alpha",
+            "page": "2",
+        },
+    )
+
+    assert response.status_code == 200
+    mapping.refresh_from_db()
+    assert (
+        mapping.mapping_config["workspace_preferences"]["dataset_table_columns"]["Ereignis"]
+        == [role_property_uri, project_property_uri]
+    )
+
+    hx_location = json.loads(response.headers["HX-Location"])
+    assert "workspace" in hx_location["path"]
+    assert "dataset=Ereignis" in hx_location["path"]
+    assert "q=alpha" in hx_location["path"]
+    assert "page=2" in hx_location["path"]
+
+    clear_response = _post_dataset_table_preference(
+        client,
+        mapping,
+        {
+            "dataset": "Ereignis",
+            "reset_columns": "1",
+        },
+    )
+
+    assert clear_response.status_code == 200
+    mapping.refresh_from_db()
+    dataset_columns = (
+        (mapping.mapping_config or {})
+        .get("workspace_preferences", {})
+        .get("dataset_table_columns", {})
+    )
+    assert "Ereignis" not in dataset_columns
+
+
+def test_dataset_table_uses_configured_column_subset(
+    client,
+    user,
+    mapping,
+    organization,
+    workspace_service,
+):
+    client.force_login(user)
+
+    project_uri = _entity_uri(organization, "Projekt", "P-030")
+    object_uri = _entity_uri(organization, "Digitales Objekt", "O-030")
+
+    assert _post_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "projekt_id": "P-030",
+            "titel": "Projekt Config Label",
+        },
+    ).status_code == 200
+    assert _post_dataset(
+        client,
+        mapping,
+        "Digitales Objekt",
+        {
+            "objekt_id": "O-030",
+            "titel": "Objekt Config Label",
+        },
+    ).status_code == 200
+    assert _post_dataset(
+        client,
+        mapping,
+        "Ereignis",
+        {
+            "ereignis_id": "E-030",
+            "bezeichnung": "Premiere",
+            "projekt_fk": project_uri,
+            "digital_object_fk": object_uri,
+            "rolle": "Screening",
+        },
+    ).status_code == 200
+
+    mapping.mapping_config = {
+        "workspace_preferences": {
+            "dataset_table_columns": {
+                "Ereignis": [
+                    workspace_service.datasets["Ereignis"]["properties"]["bezeichnung"].uri,
+                    workspace_service.datasets["Ereignis"]["properties"]["rolle"].uri,
+                ],
+            }
+        }
+    }
+    mapping.save(update_fields=["mapping_config"])
+
+    response = _get_dataset_table(client, mapping, "Ereignis")
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "<th>Bezeichnung</th>" in html
+    assert "<th>Rolle</th>" in html
+    assert "<th>Projekt</th>" not in html
+    assert "<th>Digitales Objekt</th>" not in html
 
 
 def test_dataset_table_uses_explicit_pagination_controls(

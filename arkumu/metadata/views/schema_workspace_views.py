@@ -912,43 +912,63 @@ def _build_project_access_context(
     return context
 
 
-def _preferred_display_property_uri(
-    service: SchemaWorkspaceService,
-    target_dataset: Optional[str],
-) -> Optional[str]:
-    if not target_dataset:
+def _configured_dataset_table_property_uris(
+    mapping: Mapping,
+    dataset_name: Optional[str],
+) -> Optional[List[str]]:
+    if not dataset_name:
         return None
 
-    try:
-        target_schema = service.get_dataset_schema(target_dataset)
-    except ValueError:
+    config = mapping.mapping_config or {}
+    workspace_preferences = config.get("workspace_preferences") or {}
+    dataset_columns = workspace_preferences.get("dataset_table_columns") or {}
+    if not isinstance(dataset_columns, dict):
         return None
 
-    properties = target_schema.get("properties", {}) or {}
-    preferred_tokens = (
-        "name",
-        "titel",
-        "title",
-        "label",
-        "bezeichnung",
-        "beschreibung",
-    )
-
-    for column, prop in properties.items():
-        column_key = str(column or "").lower()
-        label_key = str(getattr(prop, "name", "") or column).lower()
-        if any(token in column_key or token in label_key for token in preferred_tokens):
-            uri = getattr(prop, "uri", None)
-            if uri:
-                return str(uri)
-
+    for key in (dataset_name, slugify(dataset_name)):
+        value = dataset_columns.get(key)
+        if isinstance(value, list):
+            return [str(item) for item in value if item]
     return None
 
 
-def _dataset_table_column_specs(
+def _set_configured_dataset_table_property_uris(
+    mapping: Mapping,
+    dataset_name: str,
+    property_uris: List[str],
+) -> None:
+    config = dict(mapping.mapping_config or {})
+    workspace_preferences = dict(config.get("workspace_preferences") or {})
+    dataset_columns = dict(workspace_preferences.get("dataset_table_columns") or {})
+
+    dataset_columns.pop(dataset_name, None)
+    dataset_columns.pop(slugify(dataset_name), None)
+
+    cleaned_uris = [str(uri).strip() for uri in property_uris if str(uri).strip()]
+    if cleaned_uris:
+        dataset_columns[dataset_name] = cleaned_uris
+
+    if dataset_columns:
+        workspace_preferences["dataset_table_columns"] = dataset_columns
+    else:
+        workspace_preferences.pop("dataset_table_columns", None)
+
+    if workspace_preferences:
+        config["workspace_preferences"] = workspace_preferences
+    else:
+        config.pop("workspace_preferences", None)
+
+    mapping.mapping_config = config
+    update_fields = ["mapping_config"]
+    if hasattr(mapping, "updated_at"):
+        update_fields.append("updated_at")
+    mapping.save(update_fields=update_fields)
+
+
+def _dataset_table_all_column_specs(
     service: SchemaWorkspaceService,
     dataset_name: str,
-) -> List[Dict[str, Optional[str]]]:
+) -> List[Dict[str, str]]:
     schema = service.get_dataset_schema(dataset_name)
     properties = schema.get("properties", {}) or {}
     field_metadata = service.get_field_metadata(dataset_name)
@@ -1001,6 +1021,76 @@ def _dataset_table_column_specs(
     return _build_specs(include_anchors=True)
 
 
+def _dataset_table_column_specs(
+    service: SchemaWorkspaceService,
+    dataset_name: str,
+) -> List[Dict[str, Optional[str]]]:
+    column_specs = _dataset_table_all_column_specs(service, dataset_name)
+    configured_property_uris = _configured_dataset_table_property_uris(
+        service.mapping,
+        dataset_name,
+    ) or []
+    if not configured_property_uris:
+        return column_specs
+
+    configured_set = set(configured_property_uris)
+    filtered_specs = [
+        spec for spec in column_specs if spec.get("property_uri") in configured_set
+    ]
+    return filtered_specs or column_specs
+
+
+def _dataset_table_column_options(
+    service: SchemaWorkspaceService,
+    dataset_name: str,
+) -> List[Dict[str, str]]:
+    options: List[Dict[str, str]] = []
+    for spec in _dataset_table_all_column_specs(service, dataset_name):
+        property_uri = str(spec.get("property_uri") or "").strip()
+        if not property_uri:
+            continue
+        options.append(
+            {
+                "uri": property_uri,
+                "label": str(spec.get("label") or spec.get("field_name") or property_uri),
+            }
+        )
+    return options
+
+
+def _preferred_display_property_uri(
+    service: SchemaWorkspaceService,
+    target_dataset: Optional[str],
+) -> Optional[str]:
+    if not target_dataset:
+        return None
+
+    try:
+        target_schema = service.get_dataset_schema(target_dataset)
+    except ValueError:
+        return None
+
+    properties = target_schema.get("properties", {}) or {}
+    preferred_tokens = (
+        "name",
+        "titel",
+        "title",
+        "label",
+        "bezeichnung",
+        "beschreibung",
+    )
+
+    for column, prop in properties.items():
+        column_key = str(column or "").lower()
+        label_key = str(getattr(prop, "name", "") or column).lower()
+        if any(token in column_key or token in label_key for token in preferred_tokens):
+            uri = getattr(prop, "uri", None)
+            if uri:
+                return str(uri)
+
+    return None
+
+
 def _render_dataset_panel(
     request: HttpRequest,
     *,
@@ -1048,7 +1138,6 @@ def _render_dataset_panel(
         seen_property_uris.add(uri_str)
 
     search_properties.sort(key=lambda item: item["label"].lower())
-
     # Pair form fields with their metadata for template access
     normal_fields: List[Dict[str, Any]] = []
     relationship_fields: List[Dict[str, Any]] = []
@@ -2936,6 +3025,70 @@ class ProjectAccessLevelUpdateView(LoginRequiredMixin, View):
         return HttpResponse(html)
 
 
+class DatasetTablePreferenceView(LoginRequiredMixin, View):
+    """Persist visible table columns for a dataset and reload the table."""
+
+    def post(self, request: HttpRequest, mapping_id: str) -> HttpResponse:
+        dataset_name = (request.POST.get("dataset") or "").strip()
+        if not dataset_name:
+            return HttpResponseBadRequest("Missing dataset parameter")
+
+        try:
+            service = _get_schema_service(request, mapping_id)
+        except ValueError as exc:
+            return HttpResponseBadRequest(str(exc))
+
+        option_uris = {
+            option["uri"]
+            for option in _dataset_table_column_options(service, dataset_name)
+        }
+        selected_uris: List[str] = []
+        if request.POST.get("reset_columns") != "1":
+            seen_uris: Set[str] = set()
+            submitted_uris = request.POST.getlist("columns")
+            for uri in submitted_uris:
+                cleaned_uri = str(uri).strip()
+                if not cleaned_uri or cleaned_uri in seen_uris:
+                    continue
+                if cleaned_uri not in option_uris:
+                    return HttpResponseBadRequest("Unknown table column")
+                selected_uris.append(cleaned_uri)
+                seen_uris.add(cleaned_uri)
+
+        if len(selected_uris) >= len(option_uris):
+            selected_uris = []
+
+        _set_configured_dataset_table_property_uris(
+            service.mapping,
+            dataset_name,
+            selected_uris,
+        )
+
+        query_params: Dict[str, str] = {"dataset": dataset_name}
+        visible_uris = set(selected_uris) if selected_uris else option_uris
+        selected_property = (request.POST.get("property") or "").strip()
+        if selected_property and selected_property in visible_uris:
+            query_params["property"] = selected_property
+        for key in ("q", "page"):
+            value = (request.POST.get(key) or "").strip()
+            if value:
+                query_params[key] = value
+
+        reload_url = "{}?{}".format(
+            reverse("metadata:entity_workspace_table", args=[mapping_id]),
+            urlencode(query_params),
+        )
+        response = HttpResponse("")
+        response["HX-Location"] = json.dumps(
+            {
+                "path": reload_url,
+                "target": "#dataset-panel",
+                "swap": "innerHTML",
+            }
+        )
+        return response
+
+
 class DatasetFieldValueOptionsView(LoginRequiredMixin, View):
     """Return existing literal suggestions for dataset fields."""
 
@@ -4522,13 +4675,25 @@ class DatasetTableView(LoginRequiredMixin, View):
             previous_page_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode(dict(base_params, page=page - 1))
         next_page_params = dict(base_params, page=page + 1)
         next_page_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode(next_page_params)
+        table_column_options = _dataset_table_column_options(service, dataset_name)
+        configured_table_column_uris = _configured_dataset_table_property_uris(
+            service.mapping,
+            dataset_name,
+        ) or [option["uri"] for option in table_column_options]
 
         return render(request, "metadata/entity_creation/partials/_dataset_table.html", {
             "rows": rows,
             "columns": columns,
+            "dataset_name": dataset_name,
             "search_query": search_query,
             "search_properties": search_properties,
             "selected_property": selected_property,
+            "table_column_options": table_column_options,
+            "configured_table_column_uris": configured_table_column_uris,
+            "table_preference_url": reverse(
+                "metadata:entity_workspace_table_preference",
+                args=[service.mapping.id],
+            ),
             "search_url": search_url,
             "has_more": has_more,
             "current_page": page,

@@ -199,6 +199,7 @@ urlpatterns = [
     path('workspace/', schema_workspace_views.SchemaDrivenWorkspaceView.as_view(), name='entity_creation_workspace'),
     path('workspace/<uuid:mapping_id>/dataset/', schema_workspace_views.SchemaDatasetFragmentView.as_view(), name='entity_workspace_dataset'),
     path('workspace/<uuid:mapping_id>/table/', schema_workspace_views.DatasetTableView.as_view(), name='entity_workspace_table'),
+    path('workspace/<uuid:mapping_id>/table-preferences/', schema_workspace_views.DatasetTablePreferenceView.as_view(), name='entity_workspace_table_preference'),
     path('workspace/<uuid:mapping_id>/delete-entity/', schema_workspace_views.DeleteEntityView.as_view(), name='entity_workspace_delete'),
     path('workspace/<uuid:mapping_id>/project-access/', schema_workspace_views.ProjectAccessLevelUpdateView.as_view(), name='project_access_update'),
     path('workspace/<uuid:mapping_id>/field-values/', schema_workspace_views.DatasetFieldValueOptionsView.as_view(), name='entity_workspace_field_values'),
