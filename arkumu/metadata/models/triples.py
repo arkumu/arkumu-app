@@ -76,6 +76,8 @@ class Triple(UUIDModel):
             models.Index(fields=['object']),
             models.Index(fields=['object', 'predicate']),  # For reverse lookup
             models.Index(fields=['predicate']),  # For relationship type filtering
+            # Supports dataset membership paging on isPartOf without an extra sort on subject.
+            models.Index(fields=['predicate', 'object', 'subject'], name='metadata_tr_pred_obj_subj_idx'),
             models.Index(fields=['source']),  # For filtering by source
             models.Index(fields=['is_derived']),  # For filtering original vs derived
         ]
@@ -109,4 +111,3 @@ class Triple(UUIDModel):
         
     def __str__(self):
         return f"{self.subject} —{self.predicate}→ {self.object}"
-
