@@ -1,6 +1,6 @@
 {% if search_query %}
 <div class="mb-2 text-sm text-base-content/70">
-  Ergebnisse für "{{ search_query }}" ({{ total_count }})
+  Ergebnisse für "{{ search_query }}"
 </div>
 {% endif %}
 
@@ -64,7 +64,7 @@
   </table>
 </div>
 
-{% if total_pages > 1 %}
+{% if has_previous or has_more %}
 <div class="flex justify-center mt-4">
   <div class="join">
     {% if has_previous %}
@@ -88,7 +88,7 @@
     {% endif %}
 
     <button type="button" class="join-item btn btn-sm btn-active">
-      Seite {{ current_page }} von {{ total_pages }}
+      Seite {{ current_page }}
     </button>
 
     {% if has_more %}
@@ -99,16 +99,8 @@
             hx-swap="innerHTML">
       ›
     </button>
-    <button type="button"
-            class="join-item btn btn-sm"
-            hx-get="{{ last_page_url }}"
-            hx-target="#dataset-panel"
-            hx-swap="innerHTML">
-      »
-    </button>
     {% else %}
     <button type="button" class="join-item btn btn-sm btn-disabled">›</button>
-    <button type="button" class="join-item btn btn-sm btn-disabled">»</button>
     {% endif %}
   </div>
 </div>

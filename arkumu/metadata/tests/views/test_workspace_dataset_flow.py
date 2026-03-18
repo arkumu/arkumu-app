@@ -653,7 +653,7 @@ def test_dataset_table_uses_explicit_pagination_controls(
     assert response.status_code == 200
     html = response.content.decode()
     assert "Mehr laden" not in html
-    assert "Seite 1 von 2" in html
+    assert "Seite 1" in html
     assert "page=2" in html
 
 

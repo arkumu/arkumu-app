@@ -4230,7 +4230,9 @@ class DatasetTableView(LoginRequiredMixin, View):
         if not dataset_resource:
             return render(request, "metadata/entity_creation/partials/_dataset_table.html", {
                 "rows": [], "columns": [], "search_query": search_query,
-                "search_url": "", "total_count": 0, "has_more": False,
+                "search_url": "", "has_more": False, "has_previous": False,
+                "current_page": 1, "next_page_url": "", "previous_page_url": "",
+                "first_page_url": "",
             })
 
         # Mirror the visible form field ordering in the table.
@@ -4263,9 +4265,9 @@ class DatasetTableView(LoginRequiredMixin, View):
             return render(request, "metadata/entity_creation/partials/_dataset_table.html", {
                 "rows": [], "columns": columns, "search_query": search_query,
                 "search_properties": search_properties, "selected_property": selected_property,
-                "search_url": "", "total_count": 0, "has_more": False, "current_page": 1,
-                "total_pages": 1, "has_previous": False, "next_page_url": "",
-                "previous_page_url": "", "first_page_url": "", "last_page_url": "",
+                "search_url": "", "has_more": False, "current_page": 1,
+                "has_previous": False, "next_page_url": "", "previous_page_url": "",
+                "first_page_url": "",
             })
 
         entity_membership_qs = Triple.objects.filter(
@@ -4308,13 +4310,23 @@ class DatasetTableView(LoginRequiredMixin, View):
 
         entity_membership_qs = entity_membership_qs.order_by("subject_id")
 
-        total_count = entity_membership_qs.count()
-        total_pages = max(1, (total_count + per_page - 1) // per_page) if total_count else 1
-        page = max(1, min(page, total_pages))
+        page = max(1, page)
         start = (page - 1) * per_page
-        entity_rows = list(
-            entity_membership_qs.values_list("subject_id", "subject__uri", "subject__name")[start:start + per_page]
-        )
+
+        def _fetch_entity_rows(page_number: int) -> List[Tuple[int, str, Optional[str]]]:
+            offset = (page_number - 1) * per_page
+            return list(
+                entity_membership_qs.values_list("subject_id", "subject__uri", "subject__name")[offset:offset + per_page + 1]
+            )
+
+        entity_rows = _fetch_entity_rows(page)
+        if page > 1 and not entity_rows:
+            page -= 1
+            start = (page - 1) * per_page
+            entity_rows = _fetch_entity_rows(page)
+
+        has_more = len(entity_rows) > per_page
+        entity_rows = entity_rows[:per_page]
         entity_ids = [subject_id for subject_id, _, _ in entity_rows]
         entity_uri_by_id = {subject_id: subject_uri for subject_id, subject_uri, _ in entity_rows}
         row_resources = [
@@ -4420,7 +4432,6 @@ class DatasetTableView(LoginRequiredMixin, View):
             previous_page_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode(dict(base_params, page=page - 1))
         next_page_params = dict(base_params, page=page + 1)
         next_page_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode(next_page_params)
-        last_page_url = reverse("metadata:entity_workspace_table", args=[mapping_id]) + "?" + urlencode(dict(base_params, page=total_pages))
 
         return render(request, "metadata/entity_creation/partials/_dataset_table.html", {
             "rows": rows,
@@ -4429,15 +4440,12 @@ class DatasetTableView(LoginRequiredMixin, View):
             "search_properties": search_properties,
             "selected_property": selected_property,
             "search_url": search_url,
-            "total_count": total_count,
-            "has_more": (start + per_page) < total_count,
+            "has_more": has_more,
             "current_page": page,
-            "total_pages": total_pages,
             "has_previous": page > 1,
             "next_page_url": next_page_url,
             "previous_page_url": previous_page_url,
             "first_page_url": first_page_url,
-            "last_page_url": last_page_url,
         })
 
 
