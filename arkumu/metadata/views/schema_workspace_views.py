@@ -303,6 +303,18 @@ def _apply_relationship_initials(
                     relationship.target_dataset,
                 ),
             }
+            if relationship.target_dataset:
+                item["load_url"] = "{}?{}".format(
+                    reverse("metadata:entity_workspace_dataset", args=[service.mapping.id]),
+                    urlencode(
+                        {
+                            "dataset": relationship.target_dataset,
+                            "mode": "load",
+                            "entity_uri": uri,
+                            "entity_label": item["label"],
+                        }
+                    ),
+                )
             # Add resource ID for graph view navigation
             resource = Resource.objects.filter(uri=uri).first()
             if resource:

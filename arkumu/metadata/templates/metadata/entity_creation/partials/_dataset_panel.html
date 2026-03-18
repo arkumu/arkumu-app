@@ -287,6 +287,15 @@
                   {% for choice in relation.items %}
                     <div class="flex items-center gap-1">
                       <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
+                      {% if choice.load_url %}
+                        <button type="button"
+                                class="btn btn-xs btn-ghost"
+                                hx-get="{{ choice.load_url }}"
+                                hx-target="#dataset-panel"
+                                hx-swap="innerHTML show:top">
+                          Bearbeiten
+                        </button>
+                      {% endif %}
                       {% if choice.resource_id %}
                         <a href="{% url 'metadata:resource_graph' choice.resource_id %}"
                            class="btn btn-xs btn-primary btn-circle"

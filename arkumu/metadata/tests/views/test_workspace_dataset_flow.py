@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+from urllib.parse import urlparse, parse_qs
 
 import pytest
 from django.db import connection
@@ -13,7 +14,8 @@ from arkumu.metadata.models.mappings import Mapping
 from arkumu.metadata.models.resource import Resource, ResourceType
 from arkumu.metadata.models.triples import Triple
 from arkumu.metadata.schema_workspace.forms import DatasetEntityForm
-from arkumu.metadata.schema_workspace.services import SchemaWorkspaceService
+from arkumu.metadata.schema_workspace.services import SchemaWorkspaceService, RelationshipValues
+from arkumu.metadata.views.schema_workspace_views import _apply_relationship_initials
 from arkumu.users.models import Organization, User
 
 
@@ -749,6 +751,97 @@ def test_dataset_table_uses_configured_column_subset(
     assert "<th>Rolle</th>" in html
     assert "<th>Projekt</th>" not in html
     assert "<th>Digitales Objekt</th>" not in html
+
+
+def test_read_only_relationship_items_include_workspace_edit_link(
+    organization,
+    mapping,
+    workspace_service,
+):
+    service = SchemaWorkspaceService(
+        mapping=mapping,
+        organization=organization,
+        base_uri="http://arkumu.org/data",
+    )
+    form = DatasetEntityForm(field_metadata={})
+
+    event_uri, _ = service.save_entity(
+        "Ereignis",
+        {
+            "ereignis_id": "E-900",
+            "bezeichnung": "Bearbeitbares Ereignis",
+        },
+    )
+
+    read_only = _apply_relationship_initials(
+        service=service,
+        form=form,
+        relationships=[
+            RelationshipValues(
+                field_name="__reverse__Ereignis",
+                display_label="Ereignis",
+                uris=[event_uri],
+                is_join=False,
+                target_dataset="Ereignis",
+                editable=False,
+            )
+        ],
+    )
+
+    assert len(read_only) == 1
+    item = read_only[0]["items"][0]
+    assert item["label"]
+    assert "workspace" in item["load_url"]
+    query = parse_qs(urlparse(item["load_url"]).query)
+    assert query["dataset"] == ["Ereignis"]
+    assert query["mode"] == ["load"]
+    assert query["entity_uri"] == [event_uri]
+
+
+def test_read_only_relationship_edit_button_scrolls_panel_to_top(
+    client,
+    user,
+    mapping,
+    organization,
+    workspace_service,
+):
+    client.force_login(user)
+
+    project_uri = _entity_uri(organization, "Projekt", "P-700")
+    assert _post_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "projekt_id": "P-700",
+            "titel": "Projekt Mit Beziehung",
+        },
+    ).status_code == 200
+    assert _post_dataset(
+        client,
+        mapping,
+        "Ereignis",
+        {
+            "ereignis_id": "E-700",
+            "bezeichnung": "Ereignis Zum Bearbeiten",
+            "projekt_fk": project_uri,
+        },
+    ).status_code == 200
+
+    response = _load_dataset(
+        client,
+        mapping,
+        "Projekt",
+        {
+            "mode": "load",
+            "entity_uri": project_uri,
+        },
+    )
+
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "Bearbeiten" in html
+    assert 'hx-swap="innerHTML show:top"' in html
 
 
 def test_dataset_table_uses_explicit_pagination_controls(
