@@ -170,6 +170,17 @@ class SchemaWorkspaceService:
         dataset_lower = dataset_name.lower()
         return any(pattern in dataset_lower for pattern in vocab_patterns)
 
+    @staticmethod
+    def _is_inferred_junction_schema(schema: Dict[str, Any]) -> bool:
+        """Treat anchor-less datasets with at least two FK columns as junction-like."""
+        if not isinstance(schema, dict):
+            return False
+        if schema.get("junction_schema"):
+            return True
+        fk_relationships = schema.get("fk_relationships", []) or []
+        anchor_columns = schema.get("anchor_columns", []) or []
+        return len(fk_relationships) >= 2 and not anchor_columns
+
     def list_datasets(self) -> List[DatasetSummary]:
         summaries: List[DatasetSummary] = []
         for dataset_name in self._schema_service.list_datasets():
@@ -452,6 +463,8 @@ class SchemaWorkspaceService:
             if any(rel.join_dataset == candidate for rel in configured_relationships):
                 continue
             schema = self.get_dataset_schema(candidate)
+            if not self._is_inferred_junction_schema(schema):
+                continue
             junction = schema.get("junction_schema") or {}
 
             primary_dataset = junction.get("primary_dataset")
@@ -483,15 +496,13 @@ class SchemaWorkspaceService:
                     else:
                         if other_rel is None:
                             other_rel = rel
-                if self_rel is None and fk_relationships:
-                    self_rel = fk_relationships[0]
+                if self_rel is None:
+                    continue
                 if other_rel is None and fk_relationships:
                     for rel in fk_relationships:
                         if rel is not self_rel:
                             other_rel = rel
                             break
-                if self_rel is None:
-                    continue
                 if other_rel is None:
                     continue
                 self_column = self_rel.get("source_column")
@@ -734,21 +745,6 @@ class SchemaWorkspaceService:
         for relationship in self.list_join_relationships(dataset_name):
             if relationship.other_dataset in direct_multi_targets and not relationship.widget_name:
                 continue
-
-            # Only process join relationships that actually involve this dataset.
-            # Skip relationships where the self_column is not in the current dataset's
-            # field metadata - these are unrelated junction relationships that should
-            # not affect FK fields in the current dataset.
-            if relationship.self_column not in field_metadata:
-                # Also check if this is a configured relationship for this dataset
-                # by verifying it doesn't just happen to share a target dataset
-                has_relevant_fk = any(
-                    (meta.get("fk_relationship") or {}).get("target_dataset") == relationship.other_dataset
-                    and relationship.join_dataset == dataset_name
-                    for meta in field_metadata.values()
-                )
-                if not has_relevant_fk:
-                    continue
 
             dataset_fk_field = None
             for field_name, field_meta in list(metadata.items()):

@@ -40,17 +40,21 @@ def _make_join_schema(
         organization=organization,
     )
 
-    project_property = Resource.objects.create(
+    project_property, _ = Resource.objects.get_or_create(
         uri=project_property_uri,
-        resource_type=ResourceType.PROPERTY,
-        name="project_fk",
-        organization=organization,
+        defaults={
+            "resource_type": ResourceType.PROPERTY,
+            "name": "project_fk",
+            "organization": organization,
+        },
     )
-    event_property = Resource.objects.create(
+    event_property, _ = Resource.objects.get_or_create(
         uri=event_property_uri,
-        resource_type=ResourceType.PROPERTY,
-        name="event_fk",
-        organization=organization,
+        defaults={
+            "resource_type": ResourceType.PROPERTY,
+            "name": "event_fk",
+            "organization": organization,
+        },
     )
 
     return {
@@ -282,3 +286,252 @@ def test_list_join_relationships_and_sync(monkeypatch, organization, mapping):
         predicate=project_property,
         object=project_resource,
     ).exists()
+
+
+@pytest.mark.django_db
+def test_list_join_relationships_ignores_non_junction_fk_datasets(monkeypatch, organization, mapping):
+    project_dataset = "Projekt"
+    event_dataset = "Ereignis"
+    digital_dataset = "Digitales Objekt"
+    child_dataset = "Produktionsereignis"
+    join_dataset = "Projekt_Ereignis"
+
+    project_property_uri = "http://example.org/properties/join-projekt"
+    event_property_uri = "http://example.org/properties/join-ereignis"
+    digital_property_uri = "http://example.org/properties/join-digital"
+
+    child_anchor = Resource.objects.create(
+        uri="http://example.org/properties/child-id",
+        resource_type=ResourceType.PROPERTY,
+        name="child_id",
+        organization=organization,
+    )
+    child_project_property = Resource.objects.create(
+        uri=project_property_uri,
+        resource_type=ResourceType.PROPERTY,
+        name="project_fk",
+        organization=organization,
+    )
+    child_digital_property = Resource.objects.create(
+        uri=digital_property_uri,
+        resource_type=ResourceType.PROPERTY,
+        name="digital_fk",
+        organization=organization,
+    )
+
+    join_schema = _make_join_schema(
+        organization=organization,
+        join_dataset=join_dataset,
+        project_dataset=project_dataset,
+        event_dataset=event_dataset,
+        project_property_uri=project_property_uri,
+        event_property_uri=event_property_uri,
+    )
+
+    schema_blueprint = {
+        project_dataset: {
+            "entity_type": Resource.objects.create(
+                uri="http://example.org/types/projekt-main",
+                resource_type=ResourceType.CLASS,
+                name="Projekt",
+                organization=organization,
+            ),
+            "properties": {},
+            "column_metadata": {},
+            "anchor_columns": [],
+            "fk_relationships": [],
+        },
+        event_dataset: {
+            "entity_type": Resource.objects.create(
+                uri="http://example.org/types/ereignis-main",
+                resource_type=ResourceType.CLASS,
+                name="Ereignis",
+                organization=organization,
+            ),
+            "properties": {},
+            "column_metadata": {},
+            "anchor_columns": [],
+            "fk_relationships": [],
+        },
+        digital_dataset: {
+            "entity_type": Resource.objects.create(
+                uri="http://example.org/types/digital-main",
+                resource_type=ResourceType.CLASS,
+                name="Digitales Objekt",
+                organization=organization,
+            ),
+            "properties": {},
+            "column_metadata": {},
+            "anchor_columns": [],
+            "fk_relationships": [],
+        },
+        child_dataset: {
+            "entity_type": Resource.objects.create(
+                uri="http://example.org/types/child-main",
+                resource_type=ResourceType.CLASS,
+                name="Produktionsereignis",
+                organization=organization,
+            ),
+            "properties": {
+                "child_id": child_anchor,
+                "project_fk": child_project_property,
+                "digital_fk": child_digital_property,
+            },
+            "column_metadata": {
+                "child_id": {"column_type": "text", "is_anchor": True},
+                "project_fk": {"column_type": "fk"},
+                "digital_fk": {"column_type": "fk"},
+            },
+            "anchor_columns": [{"column_name": "child_id"}],
+            "fk_relationships": [
+                {
+                    "source_column": "project_fk",
+                    "target_dataset": project_dataset,
+                    "source_property_uri": project_property_uri,
+                },
+                {
+                    "source_column": "digital_fk",
+                    "target_dataset": digital_dataset,
+                    "source_property_uri": digital_property_uri,
+                },
+            ],
+        },
+        join_dataset: join_schema,
+    }
+
+    stub_service = _StubSchemaService(schema_blueprint)
+    monkeypatch.setattr(
+        "arkumu.metadata.schema_workspace.services.SchemaService",
+        lambda **kwargs: stub_service,
+    )
+
+    service = SchemaWorkspaceService(mapping=mapping, organization=organization)
+
+    relationships = service.list_join_relationships(project_dataset)
+
+    assert len(relationships) == 1
+    assert relationships[0].join_dataset == join_dataset
+    assert relationships[0].other_dataset == event_dataset
+
+
+@pytest.mark.django_db
+def test_list_join_relationships_ignores_unrelated_inferred_junctions(monkeypatch, organization, mapping):
+    project_dataset = "Projekt"
+    event_dataset = "Ereignis"
+    digital_dataset = "Digitales Objekt"
+    related_join_dataset = "Projekt_Ereignis"
+    unrelated_join_dataset = "Ereignis_Digitales_Objekt"
+
+    project_property_uri = "http://example.org/properties/related-projekt"
+    event_property_uri = "http://example.org/properties/related-ereignis"
+    digital_property_uri = "http://example.org/properties/related-digital"
+
+    related_join_schema = _make_join_schema(
+        organization=organization,
+        join_dataset=related_join_dataset,
+        project_dataset=project_dataset,
+        event_dataset=event_dataset,
+        project_property_uri=project_property_uri,
+        event_property_uri=event_property_uri,
+    )
+
+    unrelated_join_class = Resource.objects.create(
+        uri=f"http://example.org/types/{unrelated_join_dataset}",
+        resource_type=ResourceType.CLASS,
+        name=unrelated_join_dataset,
+        organization=organization,
+    )
+    unrelated_event_property, _ = Resource.objects.get_or_create(
+        uri=event_property_uri,
+        defaults={
+            "resource_type": ResourceType.PROPERTY,
+            "name": "event_fk",
+            "organization": organization,
+        },
+    )
+    unrelated_digital_property, _ = Resource.objects.get_or_create(
+        uri=digital_property_uri,
+        defaults={
+            "resource_type": ResourceType.PROPERTY,
+            "name": "digital_fk",
+            "organization": organization,
+        },
+    )
+
+    schema_blueprint = {
+        project_dataset: {
+            "entity_type": Resource.objects.create(
+                uri="http://example.org/types/projekt-related",
+                resource_type=ResourceType.CLASS,
+                name="Projekt",
+                organization=organization,
+            ),
+            "properties": {},
+            "column_metadata": {},
+            "anchor_columns": [],
+            "fk_relationships": [],
+        },
+        event_dataset: {
+            "entity_type": Resource.objects.create(
+                uri="http://example.org/types/ereignis-related",
+                resource_type=ResourceType.CLASS,
+                name="Ereignis",
+                organization=organization,
+            ),
+            "properties": {},
+            "column_metadata": {},
+            "anchor_columns": [],
+            "fk_relationships": [],
+        },
+        digital_dataset: {
+            "entity_type": Resource.objects.create(
+                uri="http://example.org/types/digital-related",
+                resource_type=ResourceType.CLASS,
+                name="Digitales Objekt",
+                organization=organization,
+            ),
+            "properties": {},
+            "column_metadata": {},
+            "anchor_columns": [],
+            "fk_relationships": [],
+        },
+        related_join_dataset: related_join_schema,
+        unrelated_join_dataset: {
+            "entity_type": unrelated_join_class,
+            "properties": {
+                "event_fk": unrelated_event_property,
+                "digital_fk": unrelated_digital_property,
+            },
+            "column_metadata": {
+                "event_fk": {"column_type": "fk"},
+                "digital_fk": {"column_type": "fk"},
+            },
+            "anchor_columns": [],
+            "fk_relationships": [
+                {
+                    "source_column": "event_fk",
+                    "target_dataset": event_dataset,
+                    "source_property_uri": event_property_uri,
+                },
+                {
+                    "source_column": "digital_fk",
+                    "target_dataset": digital_dataset,
+                    "source_property_uri": digital_property_uri,
+                },
+            ],
+        },
+    }
+
+    stub_service = _StubSchemaService(schema_blueprint)
+    monkeypatch.setattr(
+        "arkumu.metadata.schema_workspace.services.SchemaService",
+        lambda **kwargs: stub_service,
+    )
+
+    service = SchemaWorkspaceService(mapping=mapping, organization=organization)
+
+    relationships = service.list_join_relationships(project_dataset)
+
+    assert len(relationships) == 1
+    assert relationships[0].join_dataset == related_join_dataset
+    assert relationships[0].other_dataset == event_dataset

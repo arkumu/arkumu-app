@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils.text import slugify
 
@@ -653,6 +655,36 @@ def test_dataset_table_uses_explicit_pagination_controls(
     assert "Mehr laden" not in html
     assert "Seite 1 von 2" in html
     assert "page=2" in html
+
+
+def test_dataset_table_batches_label_queries_for_large_result_sets(
+    client,
+    user,
+    mapping,
+    organization,
+    workspace_service,
+):
+    client.force_login(user)
+    service = SchemaWorkspaceService(
+        mapping=mapping,
+        organization=organization,
+        base_uri="http://arkumu.org/data",
+    )
+
+    for index in range(1, 51):
+        service.save_entity(
+            "Projekt",
+            {
+                "projekt_id": f"P-{index:03d}",
+                "titel": f"Projekt {index:03d}",
+            },
+        )
+
+    with CaptureQueriesContext(connection) as ctx:
+        response = _get_dataset_table(client, mapping, "Projekt")
+
+    assert response.status_code == 200
+    assert len(ctx.captured_queries) <= 20
 
 
 def test_dataset_table_search_can_be_scoped_to_a_field(

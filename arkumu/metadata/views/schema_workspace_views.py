@@ -256,6 +256,19 @@ def _remove_join_source_fields(form: DatasetEntityForm, join_field_map: Dict[str
             form.initial.pop(source_field, None)
 
 
+def _join_direct_source_field_name(
+    field_metadata: Dict[str, Dict[str, Any]],
+    relationship: JoinRelationship,
+) -> Optional[str]:
+    for field_name, meta in field_metadata.items():
+        fk_info = meta.get("fk_relationship") or {}
+        if fk_info.get("target_dataset") == relationship.other_dataset:
+            return field_name
+    if relationship.self_column in field_metadata:
+        return relationship.self_column
+    return None
+
+
 def _apply_relationship_initials(
     *,
     service: SchemaWorkspaceService,
@@ -600,6 +613,178 @@ def _infer_entity_label(
     final_label = entity_uri.split('/')[-1]
     logger.info(f"[_infer_entity_label] No good label found, returning URI tail: {final_label} for {entity_uri}")
     return final_label
+
+
+def _dataset_label_property_ids(
+    service: SchemaWorkspaceService,
+    target_dataset: Optional[str],
+) -> List[int]:
+    if not target_dataset:
+        return []
+
+    try:
+        target_schema = service.get_dataset_schema(target_dataset)
+    except ValueError:
+        return []
+
+    properties = target_schema.get("properties", {}) or {}
+    anchor_columns = [
+        col.get("column_name")
+        for col in target_schema.get("anchor_columns", [])
+        if col.get("column_name")
+    ]
+    candidate_columns = anchor_columns or list(properties.keys())
+
+    property_ids: List[int] = []
+    for column in candidate_columns:
+        prop_resource = properties.get(column)
+        prop_id = getattr(prop_resource, "id", None)
+        if prop_id:
+            property_ids.append(prop_id)
+    return property_ids
+
+
+def _resolve_prefetched_entity_label(
+    *,
+    entity_uri: str,
+    entity_name: Optional[str],
+    literal_triples: List[Triple],
+    target_property_ids: Optional[List[int]] = None,
+    display_property_uri: Optional[str] = None,
+    include_rich_context: bool = False,
+) -> str:
+    uri_tail = entity_uri.split("/")[-1]
+    if uri_tail.startswith("uri-") and "-label-" in uri_tail:
+        parts = uri_tail.split("-label-")
+        if len(parts) == 2:
+            return parts[1]
+
+    def _literal_value(triple: Triple) -> str:
+        value = triple.object.value or triple.object.literal_value or triple.object.name
+        return str(value or "").strip()
+
+    if display_property_uri:
+        for triple in literal_triples:
+            if getattr(triple.predicate, "uri", None) == display_property_uri:
+                value = _literal_value(triple)
+                if value:
+                    return value
+
+    for predicate_id in target_property_ids or []:
+        for triple in literal_triples:
+            if triple.predicate_id != predicate_id:
+                continue
+            value = _literal_value(triple)
+            if value and not value.isdigit():
+                return value
+
+    label_predicates_exact = (
+        "bevorzugter-titel",
+        "bevorzugtertitel",
+        "titel",
+        "title",
+        "name",
+        "label",
+    )
+    for suffix in label_predicates_exact:
+        for triple in literal_triples:
+            predicate_uri = str(getattr(triple.predicate, "uri", "") or "")
+            if not predicate_uri.lower().endswith(suffix):
+                continue
+            value = _literal_value(triple)
+            if value:
+                return value
+
+    label_patterns_contains = (
+        ("titel", 1),
+        ("title", 1),
+        ("name", 2),
+        ("label", 2),
+        ("beschreibung", 3),
+        ("description", 3),
+        ("kommentar", 4),
+        ("comment", 4),
+    )
+    candidates: List[Tuple[int, str]] = []
+    for triple in literal_triples:
+        predicate_uri = str(getattr(triple.predicate, "uri", "") or "").lower()
+        value = _literal_value(triple)
+        if not value or value.isdigit():
+            continue
+        for pattern, priority in label_patterns_contains:
+            if pattern in predicate_uri:
+                candidates.append((priority, value))
+                break
+    if candidates:
+        candidates.sort(key=lambda item: item[0])
+        return candidates[0][1]
+
+    if entity_name and entity_name != entity_uri and entity_name != uri_tail:
+        return entity_name
+
+    for triple in literal_triples:
+        value = _literal_value(triple)
+        if not value:
+            continue
+        if include_rich_context:
+            return f"{value} ({uri_tail})"
+        return value
+
+    return uri_tail
+
+
+def _bulk_infer_entity_labels(
+    service: SchemaWorkspaceService,
+    *,
+    resources: Iterable[Resource],
+    target_dataset: Optional[str] = None,
+    display_property_uri: Optional[str] = None,
+    include_rich_context: bool = False,
+) -> Dict[str, str]:
+    resource_list = [resource for resource in resources if getattr(resource, "uri", None)]
+    if not resource_list:
+        return {}
+
+    resource_ids = [resource.id for resource in resource_list if getattr(resource, "id", None)]
+    if not resource_ids:
+        return {}
+
+    literal_triples = (
+        Triple.objects.filter(
+            subject_id__in=resource_ids,
+            object__resource_type=ResourceType.LITERAL,
+        )
+        .select_related("predicate", "object")
+    )
+    triples_by_subject_id: Dict[int, List[Triple]] = {}
+    for triple in literal_triples:
+        triples_by_subject_id.setdefault(triple.subject_id, []).append(triple)
+
+    target_property_ids = _dataset_label_property_ids(service, target_dataset)
+    labels: Dict[str, str] = {}
+    for resource in resource_list:
+        resource_uri = str(resource.uri or "")
+        if not resource_uri:
+            continue
+        prefetched_label = _resolve_prefetched_entity_label(
+            entity_uri=resource_uri,
+            entity_name=getattr(resource, "name", None),
+            literal_triples=triples_by_subject_id.get(resource.id, []),
+            target_property_ids=target_property_ids,
+            display_property_uri=display_property_uri,
+            include_rich_context=include_rich_context,
+        )
+        if prefetched_label and prefetched_label != resource_uri.split("/")[-1]:
+            labels[resource_uri] = prefetched_label
+            continue
+        labels[resource_uri] = _infer_entity_label(
+            service,
+            resource_uri,
+            target_dataset,
+            include_rich_context=include_rich_context,
+            display_property_uri=display_property_uri,
+        )
+    return labels
 
 
 def _build_project_access_context(
@@ -3785,10 +3970,10 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
         logger.info(f"[SchemaDatasetFragmentView.POST] Saving entity for dataset={dataset_name}")
 
         service = self.get_service(request, mapping_id)
-        field_metadata = service.get_field_metadata(dataset_name)
+        base_field_metadata = service.get_field_metadata(dataset_name)
         field_metadata, join_field_map = service.augment_field_metadata_with_joins(
             dataset_name,
-            field_metadata,
+            base_field_metadata,
         )
         entity_uri = request.POST.get("entity_uri") or None
 
@@ -3811,6 +3996,10 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                 # Process join fields (those in join_field_map)
                 # HTMX sends arrays as fieldname[], so check POST directly
                 for field_name, relationship in join_field_map.items():
+                    direct_source_field = _join_direct_source_field_name(
+                        base_field_metadata,
+                        relationship,
+                    )
                     # First try to get array data from POST (pure HTMX submission)
                     array_key = f"{field_name}[]"
                     raw_array = request.POST.getlist(array_key)
@@ -3834,6 +4023,14 @@ class SchemaDatasetFragmentView(LoginRequiredMixin, View):
                         raw = entity_data.pop(field_name, None)
                         logger.info(f"[SchemaDatasetFragmentView.POST] Join field '{field_name}': raw_value={raw}")
                         join_payloads[field_name] = _parse_join_payload(raw)
+
+                    if not join_payloads[field_name] and direct_source_field:
+                        direct_value = request.POST.get(direct_source_field)
+                        if direct_value not in (None, ""):
+                            # Keep compatibility with older submissions that still
+                            # post direct FK values for relationships now exposed
+                            # as join widgets in the UI.
+                            entity_data[direct_source_field] = direct_value
 
                     logger.info(f"[SchemaDatasetFragmentView.POST] Join field '{field_name}': parsed={join_payloads[field_name]}")
 
@@ -4116,48 +4313,76 @@ class DatasetTableView(LoginRequiredMixin, View):
         page = max(1, min(page, total_pages))
         start = (page - 1) * per_page
         entity_rows = list(
-            entity_membership_qs.values_list("subject_id", "subject__uri")[start:start + per_page]
+            entity_membership_qs.values_list("subject_id", "subject__uri", "subject__name")[start:start + per_page]
         )
-        entity_ids = [subject_id for subject_id, _ in entity_rows]
-        entity_uri_by_id = {subject_id: subject_uri for subject_id, subject_uri in entity_rows}
+        entity_ids = [subject_id for subject_id, _, _ in entity_rows]
+        entity_uri_by_id = {subject_id: subject_uri for subject_id, subject_uri, _ in entity_rows}
+        row_resources = [
+            Resource(id=subject_id, uri=subject_uri, name=subject_name)
+            for subject_id, subject_uri, subject_name in entity_rows
+            if subject_uri
+        ]
+        row_label_map = _bulk_infer_entity_labels(
+            service,
+            resources=row_resources,
+            target_dataset=dataset_name,
+            display_property_uri=dataset_display_property_uri,
+        )
 
         # Batch-load field values for these entities, resolving referenced entity
         # labels so FK columns match the form semantics.
         if entity_ids and predicate_ids:
-            value_triples = (
+            value_triples = list(
                 Triple.objects.filter(
                     subject_id__in=entity_ids,
                     predicate_id__in=predicate_ids,
                 )
                 .select_related("subject", "predicate", "object")
             )
+            fk_resources_by_group: Dict[Tuple[Optional[str], Optional[str]], Dict[str, Resource]] = {}
+            for triple in value_triples:
+                if triple.object.resource_type == ResourceType.LITERAL:
+                    continue
+                spec = column_specs_by_predicate_id.get(triple.predicate_id, {})
+                object_uri = triple.object.uri or ""
+                if not object_uri:
+                    continue
+                cache_key = (
+                    spec.get("target_dataset"),
+                    spec.get("display_property_uri"),
+                )
+                fk_resources_by_group.setdefault(cache_key, {})[object_uri] = triple.object
+
+            fk_label_map_by_group: Dict[Tuple[Optional[str], Optional[str]], Dict[str, str]] = {}
+            for cache_key, grouped_resources in fk_resources_by_group.items():
+                target_dataset, display_property_uri = cache_key
+                fk_label_map_by_group[cache_key] = _bulk_infer_entity_labels(
+                    service,
+                    resources=grouped_resources.values(),
+                    target_dataset=target_dataset,
+                    display_property_uri=display_property_uri,
+                )
+
             value_map: Dict[int, Dict[int, List[str]]] = {}
-            label_cache: Dict[Tuple[str, Optional[str], Optional[str]], str] = {}
-            for t in value_triples:
-                entity_vals = value_map.setdefault(t.subject_id, {})
-                cell_values = entity_vals.setdefault(t.predicate_id, [])
+            for triple in value_triples:
+                entity_vals = value_map.setdefault(triple.subject_id, {})
+                cell_values = entity_vals.setdefault(triple.predicate_id, [])
 
                 resolved_value = ""
-                if t.object.resource_type == ResourceType.LITERAL:
-                    resolved_value = t.object.value or t.object.name or ""
+                if triple.object.resource_type == ResourceType.LITERAL:
+                    resolved_value = triple.object.value or triple.object.name or ""
                 else:
-                    spec = column_specs_by_predicate_id.get(t.predicate_id, {})
-                    target_dataset = spec.get("target_dataset")
-                    display_property_uri = spec.get("display_property_uri")
-                    object_uri = t.object.uri or ""
-                    cache_key = (object_uri, target_dataset, display_property_uri)
-                    if object_uri and cache_key not in label_cache:
-                        label_cache[cache_key] = str(
-                            _infer_entity_label(
-                                service,
-                                object_uri,
-                                target_dataset,
-                                display_property_uri=display_property_uri,
-                            )
-                            or t.object.name
-                            or object_uri
-                        )
-                    resolved_value = label_cache.get(cache_key, "")
+                    spec = column_specs_by_predicate_id.get(triple.predicate_id, {})
+                    cache_key = (
+                        spec.get("target_dataset"),
+                        spec.get("display_property_uri"),
+                    )
+                    object_uri = triple.object.uri or ""
+                    resolved_value = (
+                        fk_label_map_by_group.get(cache_key, {}).get(object_uri)
+                        or triple.object.name
+                        or object_uri
+                    )
 
                 resolved_value = str(resolved_value or "").strip()
                 if resolved_value and resolved_value not in cell_values:
@@ -4172,12 +4397,7 @@ class DatasetTableView(LoginRequiredMixin, View):
             uri = entity_uri_by_id.get(subject_id, "")
             vals = value_map.get(subject_id, {})
             cells = ["; ".join(vals.get(predicate_id, [])) for predicate_id in predicate_ids]
-            entity_label = _infer_entity_label(
-                service,
-                uri,
-                dataset_name,
-                display_property_uri=dataset_display_property_uri,
-            )
+            entity_label = row_label_map.get(uri, "")
             if not entity_label:
                 entity_label = next((c for c in cells if c), uri.rsplit("/", 1)[-1])
             params = urlencode({"dataset": dataset_name, "mode": "load", "entity_uri": uri, "entity_label": entity_label})
