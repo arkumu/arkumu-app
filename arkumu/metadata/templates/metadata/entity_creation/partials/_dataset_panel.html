@@ -129,14 +129,7 @@
                   {% if item.field.field.required %}<span class="text-error ml-1">*</span>{% endif %}
                 </span>
                 {% if item.meta.property_resource_id %}
-                  <a href="{% url 'metadata:resource_graph' item.meta.property_resource_id %}"
-                     class="btn btn-xs btn-primary"
-                     title="View property graph"
-                     target="_blank">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
-                    </svg>
-                  </a>
+                  {% include "metadata/entity_creation/partials/_graph_link.html" with resource_id=item.meta.property_resource_id title="Eigenschaft im Graph öffnen" %}
                 {% endif %}
               </span>
               {% if item.search_url %}
@@ -159,14 +152,7 @@
                     <div class="flex items-center gap-1">
                       <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
                       {% if choice.resource_id %}
-                        <a href="{% url 'metadata:resource_graph' choice.resource_id %}"
-                           class="btn btn-xs btn-primary btn-circle"
-                           title="View resource graph"
-                           target="_blank">
-                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
-                          </svg>
-                        </a>
+                        {% include "metadata/entity_creation/partials/_graph_link.html" with resource_id=choice.resource_id title="Wert im Graph öffnen" class_name="inline-flex h-5 w-5 items-center justify-center rounded-full text-base-content/35 transition hover:bg-base-200 hover:text-base-content/70" icon_class="h-3 w-3" %}
                       {% endif %}
                     </div>
                   {% endfor %}
@@ -204,14 +190,7 @@
                   </div>
                 {% endif %}
                 {% if item.meta.current_value_resource_id %}
-                  <a href="{% url 'metadata:resource_graph' item.meta.current_value_resource_id %}"
-                     class="btn btn-xs btn-primary"
-                     title="View value in graph: {{ item.meta.current_value }}"
-                     target="_blank">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
-                    </svg>
-                  </a>
+                  {% include "metadata/entity_creation/partials/_graph_link.html" with resource_id=item.meta.current_value_resource_id title="Wert im Graph öffnen: "|add:item.meta.current_value %}
                 {% endif %}
               </div>
             {% endif %}
@@ -224,14 +203,7 @@
               <div class="flex items-center gap-2 mt-1">
                 <span class="text-xs text-base-content/60">Wert: {{ item.meta.resolved_label }}</span>
                 {% if item.meta.resolved_resource_id %}
-                  <a href="{% url 'metadata:resource_graph' item.meta.resolved_resource_id %}"
-                     class="btn btn-xs btn-primary"
-                     title="View resource graph"
-                     target="_blank">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
-                    </svg>
-                  </a>
+                  {% include "metadata/entity_creation/partials/_graph_link.html" with resource_id=item.meta.resolved_resource_id title="Verknüpften Wert im Graph öffnen" class_name="inline-flex h-5 w-5 items-center justify-center rounded-full text-base-content/35 transition hover:bg-base-200 hover:text-base-content/70" icon_class="h-3 w-3" %}
                 {% else %}
                   <!-- DEBUG: No resolved_resource_id -->
                 {% endif %}
@@ -257,14 +229,7 @@
                 <span class="label-text font-medium flex items-center gap-2">
                   <span>{{ item.field.label }}</span>
                   {% if item.meta.property_resource_id %}
-                    <a href="{% url 'metadata:resource_graph' item.meta.property_resource_id %}"
-                       class="btn btn-xs btn-primary"
-                       title="View property graph"
-                       target="_blank">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
-                      </svg>
-                    </a>
+                    {% include "metadata/entity_creation/partials/_graph_link.html" with resource_id=item.meta.property_resource_id title="Eigenschaft im Graph öffnen" %}
                   {% endif %}
                 </span>
                 <span class="label-text-alt text-base-content/60">Mehrfachauswahl möglich</span>
@@ -297,14 +262,7 @@
                         </button>
                       {% endif %}
                       {% if choice.resource_id %}
-                        <a href="{% url 'metadata:resource_graph' choice.resource_id %}"
-                           class="btn btn-xs btn-primary btn-circle"
-                           title="View resource graph"
-                           target="_blank">
-                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
-                          </svg>
-                        </a>
+                        {% include "metadata/entity_creation/partials/_graph_link.html" with resource_id=choice.resource_id title="Wert im Graph öffnen" class_name="inline-flex h-5 w-5 items-center justify-center rounded-full text-base-content/35 transition hover:bg-base-200 hover:text-base-content/70" icon_class="h-3 w-3" %}
                       {% endif %}
                     </div>
                   {% endfor %}

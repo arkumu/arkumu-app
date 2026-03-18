@@ -1,0 +1,12 @@
+<a href="{% url 'metadata:resource_graph' resource_id %}"
+   class="{{ class_name|default:'inline-flex h-6 w-6 items-center justify-center rounded-full text-base-content/35 transition hover:bg-base-200 hover:text-base-content/70' }}"
+   title="{{ title|default:'Im Graph öffnen' }}"
+   aria-label="{{ title|default:'Im Graph öffnen' }}"
+   target="_blank">
+  <svg class="{{ icon_class|default:'h-3.5 w-3.5' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <circle cx="6" cy="6" r="2" stroke-width="1.8"></circle>
+    <circle cx="18" cy="7" r="2" stroke-width="1.8"></circle>
+    <circle cx="12" cy="18" r="2" stroke-width="1.8"></circle>
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7.7 7.1l2.8 2.8m3-2.1l2.8-.5m-3.3 4.1l-1 4.6"></path>
+  </svg>
+</a>
