@@ -90,7 +90,7 @@
       hx-target="#dataset-panel"
       hx-swap="innerHTML"
       hx-push-url="false"
-      class="space-y-4"
+      class="space-y-5"
     >
       <input type="hidden" name="dataset" value="{{ dataset_summary.dataset_name }}">
       {% if entity_uri %}
@@ -119,24 +119,24 @@
         </div>
       {% endif %}
 
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 lg:gap-4">
         {% for item in fields_with_metadata %}
-          <div class="form-control w-full {% if item.meta.is_multi_value %}md:col-span-2 lg:col-span-3{% endif %}">
-            <div class="label">
-              <span class="label-text font-medium flex items-center gap-2">
-                <span>
-                  {{ item.field.label }}
-                  {% if item.field.field.required %}<span class="text-error ml-1">*</span>{% endif %}
-                </span>
-                {% if item.meta.property_resource_id %}
-                  {% include "metadata/entity_creation/partials/_graph_link.html" with resource_id=item.meta.property_resource_id title="Eigenschaft im Graph öffnen" %}
+          <div class="form-control w-full space-y-3 rounded-2xl border border-base-200 bg-base-50/40 p-4 shadow-sm {% if item.meta.is_multi_value %}md:col-span-2 lg:col-span-3{% endif %}">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-semibold text-base-content">
+                    {{ item.field.label }}
+                    {% if item.field.field.required %}<span class="text-error ml-1">*</span>{% endif %}
+                  </span>
+                  {% if item.meta.property_resource_id %}
+                    {% include "metadata/entity_creation/partials/_graph_link.html" with resource_id=item.meta.property_resource_id title="Eigenschaft im Graph öffnen" %}
+                  {% endif %}
+                </div>
+                {% if item.search_url %}
+                  <p class="text-xs text-base-content/50">Vorhandene Werte werden beim Tippen vorgeschlagen.</p>
                 {% endif %}
-              </span>
-              {% if item.search_url %}
-                <span class="tooltip ml-2" data-tip="Tippe, um vorhandene Werte zu durchsuchen.">
-                  <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-base-200 text-xs font-semibold text-base-content/70">i</span>
-                </span>
-              {% endif %}
+              </div>
             </div>
 
             {% if item.meta.resolved_uri %}
@@ -146,9 +146,8 @@
               {# Multi-value field - pure HTMX, no JavaScript #}
               {% if item.initial_labels %}
                 <!-- DEBUG Multi-value: {{ item.field.name }}, labels={{ item.initial_labels|length }} -->
-                <div class="flex flex-wrap gap-2 mb-2">
+                <div class="flex flex-wrap gap-2 rounded-xl bg-base-100/80 p-2.5">
                   {% for choice in item.initial_labels %}
-                    <!-- choice: {{ choice }} -->
                     <div class="flex items-center gap-1">
                       <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
                       {% if choice.resource_id %}
@@ -196,46 +195,51 @@
             {% endif %}
 
             {% if item.field.help_text %}
-              <span class="text-xs text-base-content/70">{{ item.field.help_text|safe }}</span>
+              <p class="text-xs leading-relaxed text-base-content/60">{{ item.field.help_text|safe }}</p>
             {% endif %}
             {% if item.meta.resolved_label %}
               <!-- DEBUG Single FK: field={{ item.field.name }}, resolved_label={{ item.meta.resolved_label }}, resolved_resource_id={{ item.meta.resolved_resource_id }} -->
-              <div class="flex items-center gap-2 mt-1">
-                <span class="text-xs text-base-content/60">Wert: {{ item.meta.resolved_label }}</span>
+              <div class="flex flex-wrap items-center gap-2 rounded-xl bg-base-100/80 px-3 py-2 text-xs text-base-content/60">
+                <span class="font-medium text-base-content/50">Verknüpft:</span>
+                <span>{{ item.meta.resolved_label }}</span>
                 {% if item.meta.resolved_resource_id %}
                   {% include "metadata/entity_creation/partials/_graph_link.html" with resource_id=item.meta.resolved_resource_id title="Verknüpften Wert im Graph öffnen" class_name="inline-flex h-5 w-5 items-center justify-center rounded-full text-base-content/35 transition hover:bg-base-200 hover:text-base-content/70" icon_class="h-3 w-3" %}
-                {% else %}
-                  <!-- DEBUG: No resolved_resource_id -->
                 {% endif %}
               </div>
             {% endif %}
             {% if item.field.errors %}
-              <span class="text-xs text-error">
+              <div class="rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
                 {% for error in item.field.errors %}
                   {{ error }}
                 {% endfor %}
-              </span>
+              </div>
             {% endif %}
           </div>
         {% endfor %}
       </div>
 
       {% if relationship_fields or read_only_relationships %}
-        <div class="divider text-sm">Verknüpfungen</div>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <section class="space-y-3">
+          <div class="flex items-center gap-3">
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Verknüpfungen</h3>
+            <div class="h-px flex-1 bg-base-200"></div>
+          </div>
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 lg:gap-4">
           {% for item in relationship_fields %}
-            <div class="form-control w-full md:col-span-2 lg:col-span-3">
-              <div class="label">
-                <span class="label-text font-medium flex items-center gap-2">
-                  <span>{{ item.field.label }}</span>
-                  {% if item.meta.property_resource_id %}
-                    {% include "metadata/entity_creation/partials/_graph_link.html" with resource_id=item.meta.property_resource_id title="Eigenschaft im Graph öffnen" %}
-                  {% endif %}
-                </span>
-                <span class="label-text-alt text-base-content/60">Mehrfachauswahl möglich</span>
+            <div class="form-control w-full space-y-3 rounded-2xl border border-base-200 bg-base-50/40 p-4 shadow-sm md:col-span-2 lg:col-span-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 space-y-1">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold text-base-content">{{ item.field.label }}</span>
+                    {% if item.meta.property_resource_id %}
+                      {% include "metadata/entity_creation/partials/_graph_link.html" with resource_id=item.meta.property_resource_id title="Eigenschaft im Graph öffnen" %}
+                    {% endif %}
+                  </div>
+                  <p class="text-xs text-base-content/50">Mehrfachauswahl möglich</p>
+                </div>
               </div>
               {% if item.initial_labels %}
-                <div class="flex flex-wrap gap-2 mb-2">
+                <div class="flex flex-wrap gap-2 rounded-xl bg-base-100/80 p-2.5">
                   {% for choice in item.initial_labels %}
                     <div class="flex items-center gap-1">
                       <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
@@ -253,15 +257,16 @@
             </div>
           {% endfor %}
           {% for relation in read_only_relationships %}
-            <div class="form-control w-full md:col-span-2 lg:col-span-3">
-              <div class="label">
-                <span class="label-text font-medium">
-                  {{ relation.label }}
-                </span>
-                <span class="label-text-alt text-base-content/60">Nur Anzeige</span>
+            <div class="form-control w-full space-y-3 rounded-2xl border border-base-200 bg-base-50/40 p-4 shadow-sm md:col-span-2 lg:col-span-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 space-y-1">
+                  <span class="text-sm font-semibold text-base-content">{{ relation.label }}</span>
+                  <p class="text-xs text-base-content/50">Bitte im entsprechenden Formular pflegen.</p>
+                </div>
+                <span class="badge badge-ghost badge-sm shrink-0">Nur Anzeige</span>
               </div>
               {% if relation.items %}
-                <div class="flex flex-wrap gap-2 mb-2">
+                <div class="flex flex-wrap gap-2">
                   {% for choice in relation.items %}
                     <div class="flex items-center gap-1">
                       <span class="badge badge-outline whitespace-normal break-words max-w-xs" title="{{ choice.label }}">{{ choice.label|truncatechars:25 }}</span>
@@ -281,12 +286,12 @@
                   {% endfor %}
                 </div>
               {% else %}
-                <p class="text-xs text-base-content/60 mb-2">Keine verknüpften Einträge vorhanden.</p>
+                <p class="text-xs text-base-content/60">Keine verknüpften Einträge vorhanden.</p>
               {% endif %}
-              <p class="text-xs text-base-content/50">Bitte im entsprechenden Formular pflegen.</p>
             </div>
           {% endfor %}
-        </div>
+          </div>
+        </section>
       {% endif %}
 
       <div class="flex flex-wrap items-center gap-3">
