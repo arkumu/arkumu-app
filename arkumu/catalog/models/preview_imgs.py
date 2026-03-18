@@ -26,7 +26,7 @@ class PreviewImages(models.Model):
     )
     last_download = models.DateTimeField(
         help_text='Last Downloaded',
-        default=timezone.now(),
+        default=timezone.now,
     )
 
     class Meta:
