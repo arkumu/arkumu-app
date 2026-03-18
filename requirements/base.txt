@@ -37,8 +37,6 @@ moto==5.1.5
 numpy==2.2.6
 # scikit-learn for machine learning
 scikit-learn==1.7.0 
-# django-guardian for object-level permissions
-django-guardian==3.0.0 # https://github.com/django-guardian/django-guardian
 #psutil for system monitoring
 psutil==7.0.0  # https://github.com/giampaolo/psutil
 #django-eventstream

@@ -42,7 +42,7 @@ class ResourceGraphView(LoginRequiredMixin, DetailView):
                 public_access_level=PublicAccessLevel.PUBLIC,
                 is_public_approved=True
             )
-        elif not self.request.user.has_perm('metadata.view_all_resources'):
+        elif self.request.user.role != 'system_admin':
             # Authenticated users see public + restricted resources
             queryset = queryset.filter(
                 public_access_level__in=[
@@ -101,7 +101,7 @@ class ResourceGraphExpandView(LoginRequiredMixin, View):
                 public_access_level=PublicAccessLevel.PUBLIC,
                 is_public_approved=True
             )
-        elif not self.request.user.has_perm('metadata.view_all_resources'):
+        elif self.request.user.role != 'system_admin':
             queryset = queryset.filter(
                 public_access_level__in=[
                     PublicAccessLevel.PUBLIC, 

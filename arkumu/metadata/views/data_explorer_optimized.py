@@ -93,7 +93,7 @@ class OptimizedDataExplorerView(ListView):
                 public_access_level=PublicAccessLevel.PUBLIC,
                 is_public_approved=True
             )
-        elif not self.request.user.has_perm('metadata.view_all_resources'):
+        elif self.request.user.role != 'system_admin':
             return queryset.filter(
                 public_access_level__in=[
                     PublicAccessLevel.PUBLIC, 
@@ -482,7 +482,7 @@ class SemanticStatsView(ListView):
                 public_access_level=PublicAccessLevel.PUBLIC,
                 is_public_approved=True
             )
-        elif not request.user.has_perm('metadata.view_all_resources'):
+        elif request.user.role != 'system_admin':
             base_queryset = base_queryset.filter(
                 public_access_level__in=[
                     PublicAccessLevel.PUBLIC,

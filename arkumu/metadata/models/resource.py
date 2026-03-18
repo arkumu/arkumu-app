@@ -223,50 +223,10 @@ class Resource(UUIDModel):
             ),
         ]
         
-        # Add object-level permissions for django-guardian
-        # Note: view_resource, change_resource, delete_resource, add_resource are auto-created by Django
         permissions = [
-            ('share_resource', 'Can share resource with others'),
             ('can_approve_public_access', 'Can approve resources for public access'),
-            # Note: Public catalog access is automatic for all authenticated users
-            # Anonymous users get PUBLIC resources, authenticated users get PUBLIC + RESTRICTED
         ]
 
-    def can_be_deleted_by(self, user):
-        """Check if user can delete this resource based on usage rules."""
-        from guardian.shortcuts import get_users_with_perms
-        
-        # System admins can delete anything
-        if user.role == 'system_admin':
-            return True
-        
-        # Resource cannot be deleted if externally linked
-        if self.is_externally_linked:
-            return False
-        
-        # Check if resource is being used by others
-        users_with_perms = get_users_with_perms(self, only_with_perms=['change_resource'])
-        if users_with_perms.exclude(pk=user.pk).exists():
-            return False
-        
-        return True
-    
-    def get_collaboration_users(self):
-        """Get users who have been granted collaborative access."""
-        from guardian.shortcuts import get_users_with_perms
-        return get_users_with_perms(self, only_with_perms=['change_resource'])
-    
-    def share_with_user(self, user, permission_level='view'):
-        """Share this resource with another user."""
-        from guardian.shortcuts import assign_perm
-        
-        perms_to_assign = ['view_resource']
-        if permission_level in ['edit', 'change']:
-            perms_to_assign.append('change_resource')
-        
-        for perm in perms_to_assign:
-            assign_perm(perm, user, self)
-    
     # Alternative field names for compatibility
     @property
     def literal_value(self):
@@ -340,62 +300,80 @@ class Resource(UUIDModel):
         )
 
     def can_user_view(self, user):
-        """
-        Check if a user can view this resource.
-        Integrates Guardian object-level permissions with role-based and public access logic.
-        """
+        """Check if a user can view this resource using role + organization checks."""
         # Public access - anyone can view
         if self.is_publicly_accessible:
             return True
-            
+
         # If user is not authenticated, only public resources are accessible
         if not user or not user.is_authenticated:
             return False
-        
-        # Check Guardian object-level permissions first
-        if user.has_perm('view_resource', self):
+
+        # System admins see everything
+        if user.role == 'system_admin':
             return True
-        
-        # Cross-university public viewing (new requirement from specification)
-        if (self.public_access_level == PublicAccessLevel.PUBLIC and 
-            user.has_role_permission('can_view_cross_university_public')):
+
+        # Creator always has access
+        if self.created_by_id and self.created_by_id == user.pk:
             return True
-            
+
+        # Same organization - any role can view
+        if self.organization_id and self.organization_id == user.organization_id:
+            return True
+
         # Restricted access - any authenticated user can view
         if self.public_access_level == PublicAccessLevel.RESTRICTED:
             return True
-            
+
         return False
 
     def can_user_edit(self, user):
-        """
-        Check if a user can edit this resource.
-        Integrates Guardian permissions with role-based restrictions.
-        """
+        """Check if a user can edit this resource using role + organization checks."""
         if not user or not user.is_authenticated:
             return False
-        
-        # Cannot edit if externally linked (from specification)
+
+        # Cannot edit if externally linked
         if self.is_externally_linked:
             return False
-            
-        # Check Guardian object-level permissions
-        return user.has_perm('change_resource', self)
-    
+
+        # System admins can edit anything
+        if user.role == 'system_admin':
+            return True
+
+        # Creator can always edit
+        if self.created_by_id and self.created_by_id == user.pk:
+            return True
+
+        # Same organization + elevated role
+        if (self.organization_id and self.organization_id == user.organization_id
+                and user.role in ('archivist', 'manager', 'super_manager')):
+            return True
+
+        return False
+
     def can_user_delete(self, user):
-        """
-        Check if a user can delete this resource.
-        Integrates Guardian permissions with specification restrictions.
-        """
+        """Check if a user can delete this resource using role + organization checks."""
         if not user or not user.is_authenticated:
             return False
-            
-        # Cannot delete if externally linked (from specification)
+
+        # Cannot delete if externally linked
         if self.is_externally_linked:
             return False
-            
-        # Check Guardian object-level permissions
-        return user.has_perm('delete_resource', self)
+
+        # System admins can delete anything
+        if user.role == 'system_admin':
+            return True
+
+        # Creator can always delete
+        if self.created_by_id and self.created_by_id == user.pk:
+            return True
+
+        # Same organization + elevated role
+        if (self.organization_id and self.organization_id == user.organization_id
+                and user.role in ('archivist', 'manager', 'super_manager')):
+            return True
+
+        return False
     
     def can_user_link_with(self, user, target_resource):
         """Check if user can link this resource with another resource."""
