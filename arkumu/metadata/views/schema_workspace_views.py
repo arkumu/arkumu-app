@@ -644,6 +644,30 @@ def _dataset_label_property_ids(
     return property_ids
 
 
+def _dataset_label_prefetch_predicate_ids(
+    service: SchemaWorkspaceService,
+    target_dataset: Optional[str],
+    display_property_uri: Optional[str] = None,
+) -> List[int]:
+    predicate_ids = list(_dataset_label_property_ids(service, target_dataset))
+    if not display_property_uri or not target_dataset:
+        return predicate_ids
+
+    try:
+        target_schema = service.get_dataset_schema(target_dataset)
+    except ValueError:
+        return predicate_ids
+
+    properties = target_schema.get("properties", {}) or {}
+    for prop_resource in properties.values():
+        prop_id = getattr(prop_resource, "id", None)
+        prop_uri = getattr(prop_resource, "uri", None)
+        if prop_id and prop_uri == display_property_uri and prop_id not in predicate_ids:
+            predicate_ids.append(prop_id)
+            break
+    return predicate_ids
+
+
 def _resolve_prefetched_entity_label(
     *,
     entity_uri: str,
@@ -749,19 +773,50 @@ def _bulk_infer_entity_labels(
     if not resource_ids:
         return {}
 
-    literal_triples = (
-        Triple.objects.filter(
-            subject_id__in=resource_ids,
+    target_property_ids = _dataset_label_property_ids(service, target_dataset)
+    preferred_predicate_ids = _dataset_label_prefetch_predicate_ids(
+        service,
+        target_dataset,
+        display_property_uri=display_property_uri,
+    )
+
+    def _fetch_literal_triples(
+        subject_ids: List[Any],
+        *,
+        predicate_ids: Optional[List[int]] = None,
+    ) -> Dict[int, List[Triple]]:
+        if not subject_ids:
+            return {}
+
+        literal_triples = Triple.objects.filter(
+            subject_id__in=subject_ids,
             object__resource_type=ResourceType.LITERAL,
         )
-        .select_related("predicate", "object")
-    )
-    triples_by_subject_id: Dict[int, List[Triple]] = {}
-    for triple in literal_triples:
-        triples_by_subject_id.setdefault(triple.subject_id, []).append(triple)
+        if predicate_ids:
+            literal_triples = literal_triples.filter(predicate_id__in=predicate_ids)
 
-    target_property_ids = _dataset_label_property_ids(service, target_dataset)
+        triples_by_subject_id: Dict[int, List[Triple]] = {}
+        for triple in (
+            literal_triples
+            .select_related("predicate", "object")
+            .only(
+                "subject_id",
+                "predicate_id",
+                "predicate__uri",
+                "object__name",
+                "object__value",
+            )
+        ):
+            triples_by_subject_id.setdefault(triple.subject_id, []).append(triple)
+        return triples_by_subject_id
+
+    triples_by_subject_id = _fetch_literal_triples(
+        resource_ids,
+        predicate_ids=preferred_predicate_ids or None,
+    )
+
     labels: Dict[str, str] = {}
+    unresolved_resources: List[Resource] = []
     for resource in resource_list:
         resource_uri = str(resource.uri or "")
         if not resource_uri:
@@ -777,6 +832,32 @@ def _bulk_infer_entity_labels(
         if prefetched_label and prefetched_label != resource_uri.split("/")[-1]:
             labels[resource_uri] = prefetched_label
             continue
+
+        unresolved_resources.append(resource)
+
+    if unresolved_resources and preferred_predicate_ids:
+        unresolved_ids = [
+            resource.id for resource in unresolved_resources if getattr(resource, "id", None)
+        ]
+        triples_by_subject_id = _fetch_literal_triples(unresolved_ids)
+
+    for resource in unresolved_resources:
+        resource_uri = str(resource.uri or "")
+        if not resource_uri:
+            continue
+
+        prefetched_label = _resolve_prefetched_entity_label(
+            entity_uri=resource_uri,
+            entity_name=getattr(resource, "name", None),
+            literal_triples=triples_by_subject_id.get(resource.id, []),
+            target_property_ids=target_property_ids,
+            display_property_uri=display_property_uri,
+            include_rich_context=include_rich_context,
+        )
+        if prefetched_label and prefetched_label != resource_uri.split("/")[-1]:
+            labels[resource_uri] = prefetched_label
+            continue
+
         labels[resource_uri] = _infer_entity_label(
             service,
             resource_uri,
