@@ -4349,7 +4349,16 @@ class DatasetTableView(LoginRequiredMixin, View):
                     subject_id__in=entity_ids,
                     predicate_id__in=predicate_ids,
                 )
-                .select_related("subject", "predicate", "object")
+                .select_related("object")
+                .only(
+                    "subject_id",
+                    "predicate_id",
+                    "object__id",
+                    "object__uri",
+                    "object__name",
+                    "object__value",
+                    "object__resource_type",
+                )
             )
             fk_resources_by_group: Dict[Tuple[Optional[str], Optional[str]], Dict[str, Resource]] = {}
             for triple in value_triples:
