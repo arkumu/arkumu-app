@@ -1,0 +1,76 @@
+{% if has_previous or has_more %}
+<nav class="flex items-center justify-between">
+  <span class="text-xs text-base-content/50">
+    Seite {{ current_page }} von {{ total_pages }}
+  </span>
+  <div class="join">
+    {% if has_previous %}
+    <button type="button"
+            class="join-item btn btn-sm btn-ghost"
+            title="Erste Seite"
+            hx-get="{{ first_page_url }}"
+            hx-target="#dataset-panel"
+            hx-swap="innerHTML show:#dataset-panel:top">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+      </svg>
+    </button>
+    <button type="button"
+            class="join-item btn btn-sm btn-ghost"
+            title="Vorherige Seite"
+            hx-get="{{ previous_page_url }}"
+            hx-target="#dataset-panel"
+            hx-swap="innerHTML show:#dataset-panel:top">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+    </button>
+    {% else %}
+    <button type="button" class="join-item btn btn-sm btn-ghost btn-disabled" aria-disabled="true">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+      </svg>
+    </button>
+    <button type="button" class="join-item btn btn-sm btn-ghost btn-disabled" aria-disabled="true">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+    </button>
+    {% endif %}
+
+    {% if has_more %}
+    <button type="button"
+            class="join-item btn btn-sm btn-ghost"
+            title="Nächste Seite"
+            hx-get="{{ next_page_url }}"
+            hx-target="#dataset-panel"
+            hx-swap="innerHTML show:#dataset-panel:top">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+      </svg>
+    </button>
+    <button type="button"
+            class="join-item btn btn-sm btn-ghost"
+            title="Letzte Seite"
+            hx-get="{{ last_page_url }}"
+            hx-target="#dataset-panel"
+            hx-swap="innerHTML show:#dataset-panel:top">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/>
+      </svg>
+    </button>
+    {% else %}
+    <button type="button" class="join-item btn btn-sm btn-ghost btn-disabled" aria-disabled="true">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+      </svg>
+    </button>
+    <button type="button" class="join-item btn btn-sm btn-ghost btn-disabled" aria-disabled="true">
+      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/>
+      </svg>
+    </button>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}

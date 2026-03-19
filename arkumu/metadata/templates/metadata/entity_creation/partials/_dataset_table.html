@@ -97,7 +97,9 @@
 </div>
 
 {% if rows %}
-<div class="overflow-x-auto">
+{% include "metadata/entity_creation/partials/_pagination.html" %}
+
+<div class="overflow-x-auto mt-3">
   <table class="table table-sm table-zebra">
     <thead>
       <tr>
@@ -123,47 +125,7 @@
   </table>
 </div>
 
-{% if has_previous or has_more %}
-<div class="flex justify-center mt-4">
-  <div class="join">
-    {% if has_previous %}
-    <button type="button"
-            class="join-item btn btn-sm"
-            hx-get="{{ first_page_url }}"
-            hx-target="#dataset-panel"
-            hx-swap="innerHTML">
-      «
-    </button>
-    <button type="button"
-            class="join-item btn btn-sm"
-            hx-get="{{ previous_page_url }}"
-            hx-target="#dataset-panel"
-            hx-swap="innerHTML">
-      ‹
-    </button>
-    {% else %}
-    <button type="button" class="join-item btn btn-sm btn-disabled">«</button>
-    <button type="button" class="join-item btn btn-sm btn-disabled">‹</button>
-    {% endif %}
-
-    <button type="button" class="join-item btn btn-sm btn-active">
-      Seite {{ current_page }}
-    </button>
-
-    {% if has_more %}
-    <button type="button"
-            class="join-item btn btn-sm"
-            hx-get="{{ next_page_url }}"
-            hx-target="#dataset-panel"
-            hx-swap="innerHTML">
-      ›
-    </button>
-    {% else %}
-    <button type="button" class="join-item btn btn-sm btn-disabled">›</button>
-    {% endif %}
-  </div>
-</div>
-{% endif %}
+{% include "metadata/entity_creation/partials/_pagination.html" %}
 
 {% else %}
 <div class="text-sm text-base-content/60 py-4">Keine Einträge gefunden.</div>
