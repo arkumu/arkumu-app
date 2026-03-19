@@ -3,6 +3,8 @@ import logging
 import sys
 import threading
 
+from arkumu.common.startup import should_skip_startup_warmup
+
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +53,7 @@ class CatalogConfig(AppConfig):
             except Exception:
                 logger.exception("CatalogConfig: failed to rebuild project index")
 
-        # Skip heavy initialization for management commands and Huey workers
-        skip_commands = ('migrate', 'makemigrations', 'run_huey', 'collectstatic')
-        is_management_cmd = any(cmd in sys.argv for cmd in skip_commands)
+        is_management_cmd = should_skip_startup_warmup(sys.argv)
 
         # Warm Wikidata cache (skip for management commands when tables may not exist)
         if not is_management_cmd:

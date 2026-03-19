@@ -1,7 +1,10 @@
 import logging
+import sys
 import threading
 
 from django.apps import AppConfig
+
+from arkumu.common.startup import should_skip_startup_warmup
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +16,10 @@ class OaipmhConfig(AppConfig):
     def ready(self):
         # Import signals for security audit logging
         from . import signals  # noqa: F401
+
+        if should_skip_startup_warmup(sys.argv):
+            logger.debug("OaipmhConfig: cache preload skipped for startup command: %s", " ".join(sys.argv))
+            return
 
         # Preload caches in a thread to work around ASGI async context restriction
         # Use a blocking join to ensure cache is ready before first request

@@ -5,6 +5,8 @@ import threading
 from django.apps import AppConfig
 from django.conf import settings
 
+from arkumu.common.startup import should_skip_startup_warmup
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,10 +58,8 @@ class CacheConfig(AppConfig):
             except Exception as e:
                 logger.warning(f"Failed to clear caches on startup: {e}")
 
-        # Skip cache warming for Huey workers (Django handles it)
-        is_huey = 'run_huey' in sys.argv
-        if is_huey:
-            logger.debug("Cache warming skipped for Huey worker")
+        if should_skip_startup_warmup(sys.argv):
+            logger.debug("Cache warming skipped for startup command: %s", " ".join(sys.argv))
             return
 
         # Only warm cache in production or when explicitly enabled
@@ -108,7 +108,7 @@ class CacheConfig(AppConfig):
         else:
             logger.debug("Cache warming disabled in DEBUG mode")
 
-        if (warm_schema or warm_projects) and 'run_huey' not in sys.argv:
+        if warm_schema or warm_projects:
             try:
                 from arkumu.cache.tasks import (
                     warm_card_schema_cache,
