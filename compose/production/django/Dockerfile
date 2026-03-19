@@ -1,10 +1,8 @@
-
 # define an alias for the specific python version used in this file.
 FROM docker.io/python:3.12.8-slim-bookworm AS python
 
 # Python build stage
 FROM python AS python-build-stage
-
 ARG BUILD_ENVIRONMENT=production
 
 # Install apt packages (force IPv4 to avoid mirror stalls)
@@ -26,22 +24,18 @@ COPY ./requirements .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system --link-mode=copy -r ${BUILD_ENVIRONMENT}.txt
 
-
-# Python 'run' stage
-FROM python AS python-run-stage
-
+# Shared Python runtime stage
+FROM python AS python-runtime-base
 ARG BUILD_ENVIRONMENT=production
 ARG APP_HOME=/app
-
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV BUILD_ENV=${BUILD_ENVIRONMENT}
-
+ENV APP_USER=django
 WORKDIR ${APP_HOME}
 
 RUN addgroup --system django \
     && adduser --system --ingroup django django
-
 
 # Install required system dependencies (force IPv4 to avoid mirror stalls)
 RUN apt-get update -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::http::Timeout=20 \
@@ -64,22 +58,17 @@ RUN apt-get update -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::
 COPY --from=python-build-stage /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=python-build-stage /usr/local/bin /usr/local/bin
 
-
 COPY --chown=django:django ./compose/production/django/entrypoint /entrypoint
-RUN sed -i 's/\r$//g' /entrypoint
-RUN chmod +x /entrypoint
-
+RUN sed -i 's/\r$//g' /entrypoint && chmod +x /entrypoint
 
 COPY --chown=django:django ./compose/production/django/start /start
-RUN sed -i 's/\r$//g' /start
-RUN chmod +x /start
-
+RUN sed -i 's/\r$//g' /start && chmod +x /start
 
 # copy application code to WORKDIR
 COPY --chown=django:django . ${APP_HOME}
 
 # WORKDIR is created as root; give django ownership so it can create dirs at runtime
-RUN chown django:django ${APP_HOME}
+RUN chown -R django:django ${APP_HOME}
 
 USER django
 
@@ -87,8 +76,13 @@ RUN DATABASE_URL="" \
   DJANGO_SETTINGS_MODULE="config.settings.test" \
   python manage.py compilemessages
 
-# Switch back to root so the entrypoint can fix /etc/resolv.conf permissions
-# before dropping to django via gosu.
+# Switch back to root so the entrypoint can fix permissions and drop back to django.
 USER root
 
+# Web image target
+FROM python-runtime-base AS web-run-stage
+ENTRYPOINT ["/entrypoint"]
+
+# Worker image target
+FROM python-runtime-base AS worker-run-stage
 ENTRYPOINT ["/entrypoint"]

@@ -1,0 +1,102 @@
+stages:
+  - deploy
+
+.deploy_base:
+  stage: deploy
+  image: alpine:3.21
+  tags:
+    - charch
+  before_script:
+    - apk add --no-cache openssh-client curl bind-tools busybox-extras
+    - eval $(ssh-agent -s)
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - cp "$SSH_PRIVATE_KEY" ~/.ssh/deploy_key
+    - chmod 600 ~/.ssh/deploy_key
+    - ssh-add ~/.ssh/deploy_key
+    - 'echo "Runner public IP: $(curl -s --connect-timeout 2 --max-time 5 https://ifconfig.me || true)"'
+    - nslookup "$DEPLOY_HOST" || true
+    - nc -vz -w 5 "$DEPLOY_HOST" 22 || true
+  variables:
+    DEV_DEPLOY_PATH: /opt/arkumu/arkumu-app
+    PROD_DEPLOY_PATH: /opt/arkumu/arkumu-app-production
+    DEV_DEPLOY_URL: https://dev.arkumu.uni-koeln.de
+    PROD_DEPLOY_URL: https://arkumu.uni-koeln.de
+
+deploy_dev_full:
+  extends: .deploy_base
+  environment:
+    name: development
+    url: $DEV_DEPLOY_URL
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      changes:
+        - "requirements/**/*"
+        - "docker-compose.dev.yml"
+        - ".dockerignore"
+        - "compose/**/*"
+        - "**/migrations/**/*"
+  script:
+    - ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" "cd $DEV_DEPLOY_PATH && git fetch origin dev && git checkout dev && git reset --hard origin/dev && docker compose -f docker-compose.dev.yml up -d --build --force-recreate huey django"
+
+deploy_dev_fast:
+  extends: .deploy_base
+  environment:
+    name: development
+    url: $DEV_DEPLOY_URL
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      changes:
+        - "requirements/**/*"
+        - "docker-compose.dev.yml"
+        - ".dockerignore"
+        - "compose/**/*"
+        - "**/migrations/**/*"
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+  script:
+    - ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" "cd $DEV_DEPLOY_PATH && git fetch origin dev && git checkout dev && git reset --hard origin/dev && docker compose -f docker-compose.dev.yml up -d --no-build --force-recreate huey && docker compose -f docker-compose.dev.yml restart django"
+
+deploy_prod_full:
+  extends: .deploy_base
+  environment:
+    name: production
+    url: $PROD_DEPLOY_URL
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - "requirements/**/*"
+        - "docker-compose.production.yml"
+        - ".dockerignore"
+        - "compose/**/*"
+        - "**/migrations/**/*"
+  script:
+    - ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" "cd $PROD_DEPLOY_PATH && git fetch origin main && git checkout main && git reset --hard origin/main && docker compose -f docker-compose.production.yml up -d --build --force-recreate huey django"
+
+deploy_prod_fast:
+  extends: .deploy_base
+  environment:
+    name: production
+    url: $PROD_DEPLOY_URL
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - "requirements/**/*"
+        - "docker-compose.production.yml"
+        - ".dockerignore"
+        - "compose/**/*"
+        - "**/migrations/**/*"
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" "cd $PROD_DEPLOY_PATH && git fetch origin main && git checkout main && git reset --hard origin/main && docker compose -f docker-compose.production.yml up -d --no-build --force-recreate huey && docker compose -f docker-compose.production.yml restart django"
+
+prune_dev:
+  extends: .deploy_base
+  environment:
+    name: development
+    url: $DEV_DEPLOY_URL
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  script:
+    - ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" "docker container prune -f && docker image prune -f && docker builder prune -af --filter 'until=168h'"

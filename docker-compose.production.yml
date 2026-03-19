@@ -10,6 +10,7 @@ services:
     build:
       context: .
       dockerfile: ./compose/production/django/Dockerfile
+      target: web-run-stage
 
     image: arkumu_production_django
     depends_on:
@@ -46,7 +47,20 @@ services:
 
   redis:
     image: docker.io/redis:6
-    
+
+  huey:
+    build:
+      context: .
+      dockerfile: ./compose/production/django/Dockerfile
+      target: worker-run-stage
+    image: arkumu_production_huey
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - ./.envs/.production/.django
+      - ./.envs/.production/.postgres
+    command: /bin/sh -c "python manage.py run_huey"
 
   awscli:
     build:

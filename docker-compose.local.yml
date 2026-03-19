@@ -13,10 +13,10 @@ services:
     build:
       context: .
       dockerfile: ./compose/local/django/Dockerfile
+      target: web-run-stage
     image: arkumu_local_django
     container_name: arkumu_local_django
     restart: unless-stopped
-    user: "${UID:-1000}:${GID:-1000}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -117,9 +117,9 @@ services:
     build:
       context: .
       dockerfile: ./compose/local/django/Dockerfile
+      target: worker-run-stage
     image: arkumu_local_huey
     container_name: arkumu_local_huey
-    user: "${UID:-1000}:${GID:-1000}"
     depends_on:
       postgres:
         condition: service_healthy

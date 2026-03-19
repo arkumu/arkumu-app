@@ -4,6 +4,8 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+APP_USER="${APP_USER:-django}"
+
 # Docker generates /etc/resolv.conf at runtime with 640 permissions on some
 # hosts (notably Debian Trixie-based images).  The non-root user needs to read
 # it for DNS resolution, so widen permissions while we still run as root.
@@ -23,8 +25,18 @@ wait-for-it "${POSTGRES_HOST}:${POSTGRES_PORT}" -t "${WAIT_FOR_IT_TIMEOUT}"
 
 >&2 echo 'PostgreSQL is available'
 
+# If the Docker socket is mounted, add the application user to its group before
+# dropping privileges so worker-only compose/docker workflows remain available.
+if [ "$(id -u)" = "0" ] && [ -S /var/run/docker.sock ] && getent passwd "${APP_USER}" > /dev/null 2>&1; then
+    DOCKER_SOCK_GID="$(stat -c '%g' /var/run/docker.sock)"
+    if ! getent group "${DOCKER_SOCK_GID}" > /dev/null 2>&1; then
+        groupadd -g "${DOCKER_SOCK_GID}" docker-host
+    fi
+    usermod -aG "${DOCKER_SOCK_GID}" "${APP_USER}"
+fi
+
 # Drop from root to the application user
 if [ "$(id -u)" = "0" ]; then
-    exec gosu django "$@"
+    exec gosu "${APP_USER}" "$@"
 fi
 exec "$@"

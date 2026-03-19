@@ -12,6 +12,7 @@ services:
     build:
       context: .
       dockerfile: ./compose/production/django/Dockerfile
+      target: web-run-stage
     image: arkumu_dev_django
     container_name: arkumu_dev_django
     restart: unless-stopped
@@ -104,6 +105,7 @@ services:
     build:
       context: .
       dockerfile: ./compose/production/django/Dockerfile
+      target: worker-run-stage
     image: arkumu_dev_huey
     container_name: arkumu_dev_huey
     restart: unless-stopped
