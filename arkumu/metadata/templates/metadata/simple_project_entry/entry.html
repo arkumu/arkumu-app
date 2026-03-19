@@ -178,11 +178,12 @@
   {# Confirmation Modal #}
   <dialog id="confirm-modal" class="modal">
     <div class="modal-box max-w-lg">
-      <h3 class="text-lg font-bold mb-4">Projekt erstellen?</h3>
+      <h3 class="text-lg font-bold mb-1">Projekt erstellen?</h3>
+      <p class="text-sm text-base-content/50 mb-5">Bitte die Angaben prüfen.</p>
       <div class="space-y-3 text-sm" id="confirm-summary"></div>
-      <div class="modal-action">
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('confirm-modal').close()">Abbrechen</button>
-        <button type="button" class="btn btn-primary gap-2" id="confirm-submit-btn" onclick="submitProject()">
+      <div class="modal-action mt-6 gap-2">
+        <button type="button" class="btn btn-ghost transition-transform duration-150 ease-out active:scale-[0.97]" onclick="document.getElementById('confirm-modal').close()">Abbrechen</button>
+        <button type="button" class="btn btn-primary gap-2 transition-transform duration-150 ease-out active:scale-[0.97]" id="confirm-submit-btn" onclick="submitProject()">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
           Bestätigen
         </button>
@@ -225,12 +226,12 @@ function showConfirmation() {
 
   function row(label, value) {
     if (!value) return '';
-    return `<div class="flex gap-2"><span class="font-medium text-base-content/60 min-w-[120px]">${label}:</span><span>${value}</span></div>`;
+    return `<div class="flex gap-2"><span class="font-medium text-base-content/60 shrink-0 w-[100px]">${label}:</span><span class="min-w-0 break-words">${value}</span></div>`;
   }
   function tagList(label, items) {
     if (!items.length) return '';
-    const badges = items.map(t => `<span class="badge badge-outline badge-sm">${t}</span>`).join(' ');
-    return `<div class="flex gap-2 items-start"><span class="font-medium text-base-content/60 min-w-[120px]">${label}:</span><div class="flex flex-wrap gap-1">${badges}</div></div>`;
+    const badges = items.map(t => `<span class="inline-flex items-center px-2 py-0.5 rounded-md border border-base-content/20 text-xs leading-tight break-words whitespace-normal">${t}</span>`).join('');
+    return `<div class="flex gap-2 items-start"><span class="font-medium text-base-content/60 shrink-0 w-[100px]">${label}:</span><div class="min-w-0 flex flex-wrap gap-1">${badges}</div></div>`;
   }
 
   let html = '';
