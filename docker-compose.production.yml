@@ -61,12 +61,3 @@ services:
       - ./.envs/.production/.django
       - ./.envs/.production/.postgres
     command: /bin/sh -c "python manage.py run_huey"
-
-  awscli:
-    build:
-      context: .
-      dockerfile: ./compose/production/aws/Dockerfile
-    env_file:
-      - ./.envs/.production/.django
-    volumes:
-      - production_postgres_data_backups:/backups:z
