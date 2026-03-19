@@ -21,31 +21,42 @@
       <input type="hidden" name="property" value="{{ selected_property }}">
       {% endif %}
       <input type="hidden" name="page" value="{{ current_page }}">
-      <details class="dropdown w-full">
-        <summary class="btn btn-sm btn-outline w-full justify-between">
-          Spalten auswählen
+      <details class="dropdown">
+        <summary class="btn btn-sm btn-outline gap-1.5">
+          <svg class="h-3.5 w-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+          </svg>
+          Spalten
         </summary>
-        <div class="dropdown-content z-[1] mt-2 w-80 rounded-box border border-base-300 bg-base-100 p-3 shadow">
-          <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-base-content/60">
-            Sichtbare Spalten
+        <div class="dropdown-content z-50 mt-1.5 w-72 rounded-lg border border-base-300 bg-base-100 shadow-lg">
+          <div class="border-b border-base-200 px-3 py-2">
+            <span class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
+              Sichtbare Spalten
+            </span>
           </div>
-          <div class="max-h-64 space-y-2 overflow-y-auto pr-1">
+          <div class="max-h-64 space-y-0.5 overflow-y-auto p-1.5">
             {% for option in table_column_options %}
-            <label class="label cursor-pointer justify-start gap-3 py-0">
+            <label class="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors duration-150 hover:bg-base-200">
               <input type="checkbox"
                      name="columns"
                      value="{{ option.uri }}"
-                     class="checkbox checkbox-sm"
+                     class="checkbox checkbox-xs checkbox-primary"
                      {% if option.uri in configured_table_column_uris %}checked{% endif %}>
-              <span class="label-text">{{ option.label }}</span>
+              <span class="select-none text-sm">{{ option.label }}</span>
             </label>
             {% endfor %}
           </div>
-          <div class="mt-3 flex justify-end gap-2">
-            <button type="submit" class="btn btn-sm btn-ghost" name="reset_columns" value="1">
-              Alle Spalten
-            </button>
-            <button type="submit" class="btn btn-sm btn-primary">
+          <div class="flex items-center justify-between border-t border-base-200 px-3 py-2">
+            <div class="flex gap-1">
+              <button type="button" class="btn btn-xs btn-ghost text-base-content/60"
+                      onclick="this.closest('form').querySelectorAll('input[name=columns]').forEach(cb => cb.checked = false)">
+                Alle abwählen
+              </button>
+              <button type="submit" class="btn btn-xs btn-ghost text-base-content/60" name="reset_columns" value="1">
+                Alle
+              </button>
+            </div>
+            <button type="submit" class="btn btn-xs btn-primary">
               Anwenden
             </button>
           </div>
@@ -157,3 +168,4 @@
 {% else %}
 <div class="text-sm text-base-content/60 py-4">Keine Einträge gefunden.</div>
 {% endif %}
+
