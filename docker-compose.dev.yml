@@ -142,3 +142,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "${S3_HOSTNAME}:${S3_IP}"
+
+  theme:
+    image: node:22-alpine
+    container_name: arkumu_dev_theme
+    working_dir: /app/theme/static_src
+    volumes:
+      - .:/app:z
+    command: sh -c "npm ci && npm run build"
+    profiles:
+      - build

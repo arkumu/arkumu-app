@@ -61,3 +61,13 @@ services:
       - ./.envs/.production/.django
       - ./.envs/.production/.postgres
     command: /bin/sh -c "python manage.py run_huey"
+
+  theme:
+    image: node:22-alpine
+    container_name: arkumu_production_theme
+    working_dir: /app/theme/static_src
+    volumes:
+      - .:/app:z
+    command: sh -c "npm ci && npm run build"
+    profiles:
+      - build
